@@ -13,7 +13,8 @@ def version():
 
 @app.route("/heartbeat")
 def heartbeat():
-    return str(time.time())
+    # return ms since epoch
+    return str(int(1000 * time.time()))
 
 
 if __name__ == "__main__":
