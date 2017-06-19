@@ -1,34 +1,17 @@
-from flask import abort
-from flask import Flask
-from flask import jsonify
-from flask import request
+from flask import abort, Blueprint, jsonify, request
 import logging
-import pbr.version
 import re
 import os
-import time
 
 LOG = logging.getLogger(__name__)
-app = Flask(__name__)
+
+bp = Blueprint('playbooks', __name__)
 
 # TODO: read playbooks_dir from config file
 PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
 
 
-@app.route("/version")
-def version():
-    version_info = pbr.version.VersionInfo('ardana-server')
-    return version_info.version_string()
-
-
-@app.route("/heartbeat")
-def heartbeat():
-    # return ms since epoch
-    return jsonify(int(1000 * time.time()))
-
-
-# TODO: Move the rest of this to another file
-@app.route("/playbooks")
+@bp.route("/playbooks")
 def playbooks():
 
     yml_re = re.compile(r'\.yml$')
@@ -88,7 +71,7 @@ def run_ready_deployment(opts, client_id):
     pass
 
 
-@app.route("/playbook/<name>", methods=['POST'])
+@bp.route("/playbook/<name>", methods=['POST'])
 def run_playbook(name):
     """
     Run an ansible playbook
@@ -127,7 +110,3 @@ def run_playbook(name):
                         "be reduced", PLAYBOOKS_DIR)
 
     return jsonify(opts)
-
-
-if __name__ == "__main__":
-    app.run(debug=True)
