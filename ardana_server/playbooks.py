@@ -141,6 +141,13 @@ def read_process_output(ps):
 
 def spawn_process(command, args=[], cwd=None, opts={}):
 
+    # The code explicitly create processes with the subprocess module rather
+    # than using a more advanced mechanism like Celery 
+    # (http://www.celeryproject.org/) in order to avoid introducing run-time
+    # requirements on external systems (like REDIS, rabbitmq, etc.), since
+    # this program will be used in an installation scenario where those sytems
+    # are not yet running.
+
     # TODO(gary): Add logic to avoid spawning duplicate playbooks when
     # indicated, by looking at all running playbooks for one with the same
     # command line
@@ -158,6 +165,7 @@ def spawn_process(command, args=[], cwd=None, opts={}):
 
     id = "%d_%d" % (start_time, ps.pid)
 
+    # Use a thread to read the pipe to avoid blocking this process
     tasks[id] = {'task': threading.Thread(target=read_process_output,
                                           args=(ps,)),
                  'start_time': start_time}
