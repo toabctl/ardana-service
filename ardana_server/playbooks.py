@@ -1,4 +1,5 @@
-from flask import abort, Blueprint, jsonify, request, url_for
+from flask import abort, Blueprint, jsonify, request, \
+        send_from_directory, url_for
 import logging
 import os
 import re
@@ -128,6 +129,13 @@ def run_playbook(name):
                         "be reduced", PLAYBOOKS_DIR)
 
     return jsonify(opts)
+
+# TODO(gary): support (and require), maxSize parameter
+@bp.route("/v2/plays/<id>/log")
+def get_log(id):
+    # For security, send_from_directory avoids sending any files
+    # outside of the specified directory
+    return send_from_directory(LOGS_DIR, id + ".log")
 
 
 def get_log_file(id):
