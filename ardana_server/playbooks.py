@@ -84,7 +84,7 @@ def run_ready_deployment(opts, client_id):
     pass
 
 
-@bp.route("/playbook/<name>", methods=['POST'])
+@bp.route("/playbooks/<name>", methods=['POST'])
 def run_playbook(name):
     """
     Run an ansible playbook
