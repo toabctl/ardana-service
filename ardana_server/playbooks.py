@@ -10,8 +10,9 @@ LOG = logging.getLogger(__name__)
 
 bp = Blueprint('playbooks', __name__)
 
-# TODO(gary): read playbooks_dir from config file
+# TODO(gary): read this configuration from a config file
 PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
+LOGS_DIR = "/projects/hlm-ux-services/logs"
 
 # Dictionary of all running tasks
 tasks = {}
@@ -116,7 +117,9 @@ def run_playbook(name):
             else:
                 abort(404)
 
-            return spawn_process('/projects/blather', ["10"])
+            playbook_name = os.path.join(PLAYBOOKS_DIR, name)
+            #return spawn_process('ansible-playbook', [playbook_name])
+            return spawn_process('/projects/blather')
 
         except OSError:
             LOG.warning("Playbooks directory %s doesn't exist. This could "
@@ -127,17 +130,26 @@ def run_playbook(name):
     return jsonify(opts)
 
 
-def read_process_output(ps):
+def get_log_file(id):
+    return os.path.join(LOGS_DIR, id + ".log")
 
-    with ps.stdout:
-        for line in ps.stdout:
-            # python 2 returns bytes that must be converted to a string
-            if isinstance(line, bytes):
-                line = line.decode("utf-8")
-            line = line.rstrip('\n')
-            print(line)
+def process_output(ps, id):
+
+    with open(get_log_file(id), 'w') as f:
+        with ps.stdout:
+            for line in ps.stdout:
+                # python 2 returns bytes that must be converted to a string
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+
+                f.write(line)
+                f.flush()
+                line = line.rstrip('\n')
+                print("OUT: <" + line + ">")
     ps.wait()
 
+    # TODO(gary): Need to read from stdout AND stderr
+    # TODO(gary): write final state to status file
 
 def spawn_process(command, args=[], cwd=None, opts={}):
 
@@ -153,7 +165,8 @@ def spawn_process(command, args=[], cwd=None, opts={}):
     # command line
 
     cmdArgs = [command]
-    cmdArgs.extend(args)
+    if args:
+        cmdArgs.extend(args)
 
     try:
         ps = subprocess.Popen(cmdArgs, cwd=cwd, env=opts.get('env', None),
@@ -166,10 +179,9 @@ def spawn_process(command, args=[], cwd=None, opts={}):
     id = "%d_%d" % (start_time, ps.pid)
 
     # Use a thread to read the pipe to avoid blocking this process
-    tasks[id] = {'task': threading.Thread(target=read_process_output,
-                                          args=(ps,)),
+    tasks[id] = {'task': threading.Thread(target=process_output,
+                                          args=(ps, id)),
                  'start_time': start_time}
-
     tasks[id]['task'].start()
 
     return '', 202, {'Location': url_for('tasks.get_task', id=id)}
