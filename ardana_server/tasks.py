@@ -6,6 +6,6 @@ LOG = logging.getLogger(__name__)
 bp = Blueprint('tasks', __name__)
 
 
-@bp.route("/tasks/<id>")
+@bp.route("/v2/tasks/<id>")
 def get_task(id):
     pass

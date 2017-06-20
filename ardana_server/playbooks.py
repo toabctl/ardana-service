@@ -17,7 +17,7 @@ PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
 tasks = {}
 
 
-@bp.route("/playbooks")
+@bp.route("/v2/playbooks")
 def playbooks():
 
     yml_re = re.compile(r'\.yml$')
@@ -84,7 +84,7 @@ def run_ready_deployment(opts, client_id):
     pass
 
 
-@bp.route("/playbooks/<name>", methods=['POST'])
+@bp.route("/v2/playbooks/<name>", methods=['POST'])
 def run_playbook(name):
     """
     Run an ansible playbook
