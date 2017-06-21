@@ -1,5 +1,7 @@
 from flask import abort, Blueprint, jsonify, request, \
         send_from_directory, url_for
+from flask_socketio import emit
+from . import socketio
 import logging
 import os
 import re
@@ -154,6 +156,9 @@ def process_output(ps, id):
                 f.flush()
                 line = line.rstrip('\n')
                 print("OUT: <" + line + ">")
+
+                socketio.send(line, room=id)
+
     ps.wait()
 
     # TODO(gary): Need to read from stdout AND stderr
@@ -193,3 +198,27 @@ def spawn_process(command, args=[], cwd=None, opts={}):
     tasks[id]['task'].start()
 
     return '', 202, {'Location': url_for('tasks.get_task', id=id)}
+
+
+@socketio.on('connect')
+def on_connect(sid=None, environ=None):
+    print "Connecting", sid, environ
+
+
+@socketio.on('disconnect')
+def on_disconnect(sid=None):
+    print "Disconnecting", sid
+
+
+@socketio.on('join')
+def on_join(data, environ):
+    print "Joining", data
+    id = data['id']
+    join_room(id)
+
+
+@socketio.on('leave')
+def on_leave(data, environ):
+    print "Leaving", data
+    id = data['id']
+    leave_room(id)
