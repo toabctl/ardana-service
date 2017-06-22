@@ -1,6 +1,6 @@
 from flask import abort, Blueprint, jsonify, request, \
         send_from_directory, url_for
-from flask_socketio import emit
+from flask_socketio import emit, join_room, leave_room
 from . import socketio
 import logging
 import os
@@ -8,6 +8,7 @@ import re
 import subprocess
 import threading
 import time
+import pdb
 
 LOG = logging.getLogger(__name__)
 
@@ -15,7 +16,8 @@ bp = Blueprint('playbooks', __name__)
 
 # TODO(gary): read this configuration from a config file
 PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
-LOGS_DIR = "/projects/hlm-ux-services/logs"
+#LOGS_DIR = "/projects/hlm-ux-services/logs"
+LOGS_DIR = "/projects/logs"
 
 # Dictionary of all running tasks
 tasks = {}
@@ -114,11 +116,11 @@ def run_playbook(name):
     else:
         try:
             name += ".yml"
-            for filename in os.listdir(PLAYBOOKS_DIR):
-                if filename == name:
-                    break
-            else:
-                abort(404)
+            #for filename in os.listdir(PLAYBOOKS_DIR):
+            #    if filename == name:
+            #        break
+            #else:
+            #    abort(404)
 
             playbook_name = os.path.join(PLAYBOOKS_DIR, name)
             #return spawn_process('ansible-playbook', [playbook_name])
@@ -145,20 +147,24 @@ def get_log_file(id):
 
 def process_output(ps, id):
 
+    print "Processing output for", id
+
     with open(get_log_file(id), 'w') as f:
         with ps.stdout:
-            for line in ps.stdout:
+            # Can use this in python3: for line in ps.stdout: 
+            # Using iter() per https://stackoverflow.com/a/17698359/190597
+            for line in iter(ps.stdout.readline, b''):
                 # python 2 returns bytes that must be converted to a string
                 if isinstance(line, bytes):
                     line = line.decode("utf-8")
 
+                print("OUT: <" + line.rstrip('\n') + ">")
+
                 f.write(line)
                 f.flush()
-                line = line.rstrip('\n')
-                print("OUT: <" + line + ">")
+                socketio.emit("log", line, room=id)
 
-                socketio.send(line, room=id)
-
+    socketio.close_room(id)
     ps.wait()
 
     # TODO(gary): Need to read from stdout AND stderr
@@ -191,34 +197,49 @@ def spawn_process(command, args=[], cwd=None, opts={}):
 
     id = "%d_%d" % (start_time, ps.pid)
 
+    # Use a thread to read the pipe to avoid blocking this process.  Since
+    # the thread will interact with socketio, we have to use that library's
+    # function for creating threads
+    #pdb.set_trace()
+
     # Use a thread to read the pipe to avoid blocking this process
-    tasks[id] = {'task': threading.Thread(target=process_output,
-                                          args=(ps, id)),
-                 'start_time': start_time}
-    tasks[id]['task'].start()
+    use_threading = False
+    if use_threading:
+        tasks[id] = {'task': threading.Thread(target=process_output,
+                                            args=(ps, id)),
+                    'start_time': start_time}
+        tasks[id]['task'].start()
+    else:
+        tasks[id] = {'task': socketio.start_background_task(
+                                            process_output,
+                                            ps, id),
+                     'start_time': start_time}
+
+    print "Spwaned thread with task", id
 
     return '', 202, {'Location': url_for('tasks.get_task', id=id)}
 
 
 @socketio.on('connect')
-def on_connect(sid=None, environ=None):
-    print "Connecting", sid, environ
+def on_connect():
+    # print "Connecting"
+    pass
 
 
 @socketio.on('disconnect')
-def on_disconnect(sid=None):
-    print "Disconnecting", sid
+def on_disconnect():
+    # print "Disconnecting"
+    pass
 
 
-@socketio.on('join')
-def on_join(data, environ):
-    print "Joining", data
-    id = data['id']
+@socketio.on('join')  # , namespace='/log')
+def on_join(id):
+    print "Joining", id
+    # TODO: replay existing log as messages before joining the room.  If 
+    # it is critical not to miss any messages, then thread synchronizcation
+    # needs to be introduced so that if any thread is in this function,
+    # the pipe reader will pause.  That comes at a cost in code complexity
+    # and performance
+
     join_room(id)
-
-
-@socketio.on('leave')
-def on_leave(data, environ):
-    print "Leaving", data
-    id = data['id']
-    leave_room(id)
+    # socketio.emit("log", 'contents of the message')
