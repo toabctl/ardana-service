@@ -147,7 +147,8 @@ def get_log_file(id):
 
 def process_output(ps, id):
 
-    print "Processing output for", id
+    # print "Processing output for", id
+    pdb.set_trace()
 
     with open(get_log_file(id), 'w') as f:
         with ps.stdout:
@@ -158,11 +159,12 @@ def process_output(ps, id):
                 if isinstance(line, bytes):
                     line = line.decode("utf-8")
 
-                print("OUT: <" + line.rstrip('\n') + ">")
+                # print("OUT: <" + line.rstrip('\n') + ">")
 
                 f.write(line)
                 f.flush()
-                socketio.emit("log", line, room=id)
+                msg = id + " " + line
+                socketio.emit("log", msg, room=id)
 
     socketio.close_room(id)
     ps.wait()
@@ -234,12 +236,24 @@ def on_disconnect():
 
 @socketio.on('join')  # , namespace='/log')
 def on_join(id):
-    print "Joining", id
-    # TODO: replay existing log as messages before joining the room.  If 
-    # it is critical not to miss any messages, then thread synchronizcation
-    # needs to be introduced so that if any thread is in this function,
-    # the pipe reader will pause.  That comes at a cost in code complexity
-    # and performance
+
+    logfile = get_log_file(id)
+
+    # replay existing log as messages before joining the room
+    with open(logfile) as f:
+        print "Replaying", logfile
+        for line in f:
+            msg = id + " " + line + "from file"
+            socketio.emit("log", msg, broadcast=False)
+    # TODO: BUG!
+    #    socketio is sending a message to all connected clients, rather
+    #    than to just the one that triggered this event
+
+    # If it is critical not to miss any messages, then thread synchronizcation
+    # needs to be introduced so that if any thread is in this function, the
+    # pipe reader will pause.  That comes at a cost in code complexity and
+    # performance
+
+    print "Joining room", id
 
     join_room(id)
-    # socketio.emit("log", 'contents of the message')

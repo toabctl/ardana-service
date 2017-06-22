@@ -13,20 +13,16 @@ def on_message(message):
     # the message is in the /log namespace, it will be in the format 
     # 2/log["the message"]
     args = json.loads(message.lstrip('2'))
-    print "LOG: ", args[1]
+    print args[1],
 
 socketIO = SocketIO('localhost', 5000, LoggingNamespace)
 
 socketIO.on('message', on_message)  # , path='/log')
 
-print "Posting request"
+# print "Posting request"
 r = requests.post("http://localhost:5000/v2/playbooks/x.yml")
 id = r.headers['Location'].split('/')[-1]
 
-print "Joining room", id
 socketIO.emit('join', id)   # , path="/log")
-print "Joined room", id
 
-print "Reading messages"
-socketIO.wait(seconds=6)
-
+socketIO.wait(seconds=4)
