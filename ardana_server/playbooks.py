@@ -148,7 +148,7 @@ def get_log_file(id):
 def process_output(ps, id):
 
     # print "Processing output for", id
-    pdb.set_trace()
+    #pdb.set_trace()
 
     with open(get_log_file(id), 'w') as f:
         with ps.stdout:
