@@ -1,6 +1,6 @@
 from flask import abort, Blueprint, jsonify, request, \
-        send_from_directory, url_for
-from flask_socketio import emit, join_room, leave_room
+    send_from_directory, url_for
+from flask_socketio import join_room
 from . import socketio
 import logging
 import os
@@ -8,7 +8,7 @@ import re
 import subprocess
 import threading
 import time
-import pdb
+# import pdb
 
 LOG = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ bp = Blueprint('playbooks', __name__)
 
 # TODO(gary): read this configuration from a config file
 PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
-#LOGS_DIR = "/projects/hlm-ux-services/logs"
+# LOGS_DIR = "/projects/hlm-ux-services/logs"
 LOGS_DIR = "/projects/logs"
 
 # Dictionary of all running tasks
@@ -70,8 +70,9 @@ def run_site(opts, client_id):
     # Normalize the extraVars entry
     opts['extraVars'] = get_extra_vars(opts)
 
-    keep_dayzero = opts['extraVars'].pop('keep_dayzero', None)
-    destroy_on_success = opts.pop('destroyDayZeroOnSuccess', None)
+    # Extract relevant options
+    # keep_dayzero = opts['extraVars'].pop('keep_dayzero', None)
+    # destroy_on_success = opts.pop('destroyDayZeroOnSuccess', None)
 
     # TODO(gary): Handle things like reading passwords from an encrypted vault
     # TODO(gary): if successful and destory_on_success, then invoke
@@ -113,20 +114,20 @@ def run_playbook(name):
         return run_config_processor_clean(opts, client_id)
     elif name == "ready-deployment":
         return run_ready_deployment(opts, client_id)
+    elif name == "blather":
+        temp_name = os.path.join(os.curdir, 'blather')
+        return spawn_process(temp_name)
     else:
         try:
             name += ".yml"
-            #for filename in os.listdir(PLAYBOOKS_DIR):
-            #    if filename == name:
-            #        break
-            #else:
-            #    abort(404)
+            for filename in os.listdir(PLAYBOOKS_DIR):
+                if filename == name:
+                    break
+            else:
+                abort(404)
 
             playbook_name = os.path.join(PLAYBOOKS_DIR, name)
-            #return spawn_process('ansible-playbook', [playbook_name])
-
-            temp_name = os.path.join(os.curdir, 'blather')
-            return spawn_process(temp_name)
+            return spawn_process('ansible-playbook', [playbook_name])
 
         except OSError:
             LOG.warning("Playbooks directory %s doesn't exist. This could "
@@ -135,6 +136,7 @@ def run_playbook(name):
                         "be reduced", PLAYBOOKS_DIR)
 
     return jsonify(opts)
+
 
 # TODO(gary): support (and require), maxSize parameter
 @bp.route("/v2/plays/<id>/log")
@@ -147,14 +149,15 @@ def get_log(id):
 def get_log_file(id):
     return os.path.join(LOGS_DIR, id + ".log")
 
+
 def process_output(ps, id):
 
     # print "Processing output for", id
-    #pdb.set_trace()
+    # pdb.set_trace()
 
     with open(get_log_file(id), 'w') as f:
         with ps.stdout:
-            # Can use this in python3: for line in ps.stdout: 
+            # Can use this in python3: for line in ps.stdout:
             # Using iter() per https://stackoverflow.com/a/17698359/190597
             for line in iter(ps.stdout.readline, b''):
                 # python 2 returns bytes that must be converted to a string
@@ -174,10 +177,11 @@ def process_output(ps, id):
     # TODO(gary): Need to read from stdout AND stderr
     # TODO(gary): write final state to status file
 
+
 def spawn_process(command, args=[], cwd=None, opts={}):
 
     # The code explicitly create processes with the subprocess module rather
-    # than using a more advanced mechanism like Celery 
+    # than using a more advanced mechanism like Celery
     # (http://www.celeryproject.org/) in order to avoid introducing run-time
     # requirements on external systems (like REDIS, rabbitmq, etc.), since
     # this program will be used in an installation scenario where those sytems
@@ -204,19 +208,19 @@ def spawn_process(command, args=[], cwd=None, opts={}):
     # Use a thread to read the pipe to avoid blocking this process.  Since
     # the thread will interact with socketio, we have to use that library's
     # function for creating threads
-    #pdb.set_trace()
+
+    # pdb.set_trace()
 
     # Use a thread to read the pipe to avoid blocking this process
     use_threading = False
     if use_threading:
         tasks[id] = {'task': threading.Thread(target=process_output,
-                                            args=(ps, id)),
-                    'start_time': start_time}
+                                              args=(ps, id)),
+                     'start_time': start_time}
         tasks[id]['task'].start()
     else:
-        tasks[id] = {'task': socketio.start_background_task(
-                                            process_output,
-                                            ps, id),
+        tasks[id] = {'task': socketio.start_background_task(process_output,
+                                                            ps, id),
                      'start_time': start_time}
 
     print "Spwaned thread with task", id

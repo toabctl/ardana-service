@@ -1,6 +1,8 @@
 from flask import Flask
-from flask_socketio import SocketIO
-from ardana_server import playbooks, admin, tasks, socketio
+from ardana_server import playbooks
+from ardana_server import admin
+from ardana_server import tasks
+from ardana_server import socketio
 import logging
 
 LOG = logging.getLogger(__name__)
