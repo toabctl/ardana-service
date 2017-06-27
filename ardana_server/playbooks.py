@@ -1,14 +1,14 @@
+from . import socketio
 from flask import abort, Blueprint, jsonify, request, \
     send_from_directory, url_for
 from flask_socketio import join_room, emit
-from . import socketio
 import logging
 import os
+# import pdb
 import re
 import subprocess
 import threading
 import time
-# import pdb
 
 LOG = logging.getLogger(__name__)
 
