@@ -15,7 +15,7 @@ LOG = logging.getLogger(__name__)
 bp = Blueprint('playbooks', __name__)
 
 # TODO(gary): read this configuration from a config file
-PLAYBOOKS_DIR = os.path.expanduser("~/scratch/ansible/next/hos/ansible")
+PLAYBOOKS_DIR = os.path.expanduser("~/dev/scratch/ansible/next/hos/ansible")
 # LOGS_DIR = "/projects/hlm-ux-services/logs"
 LOGS_DIR = "/projects/logs"
 
@@ -152,9 +152,6 @@ def get_log_file(id):
 
 def process_output(ps, id):
 
-    # print "Processing output for", id
-    # pdb.set_trace()
-
     with open(get_log_file(id), 'w') as f:
         with ps.stdout:
             # Can use this in python3: for line in ps.stdout:
@@ -163,8 +160,6 @@ def process_output(ps, id):
                 # python 2 returns bytes that must be converted to a string
                 if isinstance(line, bytes):
                     line = line.decode("utf-8")
-
-                # print("OUT: <" + line.rstrip('\n') + ">")
 
                 f.write(line)
                 f.flush()
@@ -223,21 +218,19 @@ def spawn_process(command, args=[], cwd=None, opts={}):
                                                             ps, id),
                      'start_time': start_time}
 
-    print "Spwaned thread with task", id
+    LOG.debug("Spwaned thread with task %s", id)
 
     return '', 202, {'Location': url_for('tasks.get_task', id=id)}
 
 
 @socketio.on('connect')
 def on_connect():
-    # print "Connecting"
-    pass
+    LOG.info("Connecting")
 
 
 @socketio.on('disconnect')
 def on_disconnect():
-    # print "Disconnecting"
-    pass
+    LOG.info("Disconnecting")
 
 
 @socketio.on('join')  # , namespace='/log')
@@ -247,7 +240,7 @@ def on_join(id):
 
     # replay existing log as messages before joining the room
     with open(logfile) as f:
-        print "Replaying", logfile
+        LOG.info("Replaying %s", logfile)
         for line in f:
             msg = id + " " + line + "from file"
             emit("log", msg)
@@ -257,6 +250,6 @@ def on_join(id):
     # pipe reader will pause.  That comes at a cost in code complexity and
     # performance
 
-    print "Joining room", id
+    LOG.info("Joining room %s", id)
 
     join_room(id)
