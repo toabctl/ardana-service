@@ -124,7 +124,9 @@ def run_playbook(name):
 
             playbook_name = os.path.join(PLAYBOOKS_DIR, name)
             #return spawn_process('ansible-playbook', [playbook_name])
-            return spawn_process('/projects/blather')
+
+            temp_name = os.path.join(os.curdir, 'blather')
+            return spawn_process(temp_name)
 
         except OSError:
             LOG.warning("Playbooks directory %s doesn't exist. This could "
