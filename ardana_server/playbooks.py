@@ -15,7 +15,7 @@ LOG = logging.getLogger(__name__)
 bp = Blueprint('playbooks', __name__)
 
 # TODO(gary): read this configuration from a config file
-PLAYBOOKS_DIR = "/data/home/dev/scratch/ansible/next/hos/ansible"
+PLAYBOOKS_DIR = os.path.expanduser("~/scratch/ansible/next/hos/ansible")
 # LOGS_DIR = "/projects/hlm-ux-services/logs"
 LOGS_DIR = "/projects/logs"
 
