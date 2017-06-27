@@ -1,6 +1,6 @@
 from flask import abort, Blueprint, jsonify, request, \
     send_from_directory, url_for
-from flask_socketio import join_room
+from flask_socketio import join_room, emit
 from . import socketio
 import logging
 import os
@@ -250,10 +250,7 @@ def on_join(id):
         print "Replaying", logfile
         for line in f:
             msg = id + " " + line + "from file"
-            socketio.emit("log", msg, broadcast=False)
-    # TODO: BUG!
-    #    socketio is sending a message to all connected clients, rather
-    #    than to just the one that triggered this event
+            emit("log", msg)
 
     # If it is critical not to miss any messages, then thread synchronizcation
     # needs to be introduced so that if any thread is in this function, the
