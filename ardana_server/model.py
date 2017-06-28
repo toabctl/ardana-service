@@ -8,8 +8,9 @@ import yaml
 
 LOG = logging.getLogger(__name__)
 
+# os.path.expanduser("~/dev/helion/my_cloud/definition")
+MODEL_DIR = os.path.join(os.path.dirname(__file__), '..', 'model')
 
-MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
 CLOUD_CONFIG = "cloudConfig.yml"
 
 bp = Blueprint('model', __name__)
@@ -83,10 +84,36 @@ def read_model(model_dir):
                          'sections': collections.defaultdict(list),
                          'fileSectionMap': collections.defaultdict(list),
                          'mtime': os.stat(cloud_config_file).st_mtime,
-                         '_object_data': {},
+                         '_object_data': collections.defaultdict(list),
                         }
 
-    # TODO: Move to a function since this is common across all filetypes
+    add_to_model(model, doc, relname)
+
+    yml_re = re.compile(r'\.yml$')
+    try:
+        for root, dirs, files in os.walk(model_dir):
+            for file in files:
+                if file != CLOUD_CONFIG and yml_re.search(file):
+                    relname = os.path.relpath(os.path.join(root, file),
+                                              model_dir)
+                    model['fileInfo']['files'].append(relname)
+                elif file.startswith('README'):
+                    ext = file[7:]
+                    with open(file) as f:
+                        lines = f.readlines()
+                    model['readme'][ext] = ''.join(lines)
+
+    except OSError:
+        LOG.warning("Playbooks directory %s doesn't exist. This could indicate"
+                    " that the ready_deployment playbook hasn't been run yet. "
+                    "The list of playbooks available will be reduced",
+                    PLAYBOOKS_DIR)
+
+    return model
+
+def add_to_model(model, doc, relname):
+
+    index = 0
     for section, value in doc.iteritems():
         # Capture which section names belong in each file
         model['fileInfo']['sections'][section].append(relname)
@@ -100,33 +127,15 @@ def read_model(model_dir):
             }
             model['fileInfo']['fileSectionMap'][relname].append(mapping)
 
-            pass
         elif isinstance(value, dict) and section != 'product':
             # product, which always is the dict {'version':2}, is handled as a
             # primitive
-            pass
+            obj = {'index': index, relname: value}
+            model['fileInfo']['_object_data'][section] = obj
+            index += 1
+
         else:  # primitive
             model['fileInfo']['fileSectionMap'][relname].append(section)
-
-    yml_re = re.compile(r'\.yml$')
-    try:
-        for root, dirs, files in os.walk(model_dir):
-            for file in files:
-                if file != CLOUD_CONFIG and yml_re.search(file):
-                    relname = os.path.relpath(os.path.join(root, file),
-                                              model_dir)
-                    model['fileInfo']['files'].append(relname)
-
-    except OSError:
-        LOG.warning("Playbooks directory %s doesn't exist. This could indicate"
-                    " that the ready_deployment playbook hasn't been run yet. "
-                    "The list of playbooks available will be reduced",
-                    PLAYBOOKS_DIR)
-
-    return model
-
-def add_to_model():
-    pass
 
 def write_model(model_dir):
     pass
