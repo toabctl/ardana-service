@@ -86,6 +86,7 @@ def read_model(model_dir):
                          'mtime': os.stat(cloud_config_file).st_mtime,
                          '_object_data': collections.defaultdict(list),
                         }
+    model['inputModel'] = {}
 
     add_to_model(model, doc, relname)
 
@@ -93,15 +94,22 @@ def read_model(model_dir):
     try:
         for root, dirs, files in os.walk(model_dir):
             for file in files:
+                relname = os.path.relpath(os.path.join(root, file), model_dir)
                 if file != CLOUD_CONFIG and yml_re.search(file):
-                    relname = os.path.relpath(os.path.join(root, file),
-                                              model_dir)
                     model['fileInfo']['files'].append(relname)
                 elif file.startswith('README'):
                     ext = file[7:]
                     with open(file) as f:
                         lines = f.readlines()
                     model['readme'][ext] = ''.join(lines)
+
+                filename = os.path.join(root, file)
+                with open(filename) as f:
+                    try:
+                        doc = yaml.safe_load(f)
+                        add_to_model(model, doc, relname)
+                    except yaml.YAMLError as e:
+                        logger.exception("Invalid yaml file")
 
     except OSError:
         LOG.warning("Playbooks directory %s doesn't exist. This could indicate"
@@ -127,6 +135,10 @@ def add_to_model(model, doc, relname):
             }
             model['fileInfo']['fileSectionMap'][relname].append(mapping)
 
+            if section not in model['inputModel']:
+                model['inputModel'][section] = []
+            model['inputModel'][section].append(value)
+
         elif isinstance(value, dict) and section != 'product':
             # product, which always is the dict {'version':2}, is handled as a
             # primitive
@@ -134,8 +146,13 @@ def add_to_model(model, doc, relname):
             model['fileInfo']['_object_data'][section] = obj
             index += 1
 
+            if section not in model['inputModel']:
+                model['inputModel'][section] = {}
+            model['inputModel'][section].update(value)
+
         else:  # primitive
             model['fileInfo']['fileSectionMap'][relname].append(section)
+            model['inputModel'][section] = value
 
 def write_model(model_dir):
     pass
