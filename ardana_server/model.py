@@ -7,9 +7,8 @@ import yaml
 
 LOG = logging.getLogger(__name__)
 
-# os.path.expanduser("~/dev/helion/my_cloud/definition")
-MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..',
-                             'model'))
+MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
+# = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model'))
 
 CLOUD_CONFIG = "cloudConfig.yml"
 
@@ -32,13 +31,12 @@ def get_key_field(obj):
         region-name : used for swift/rings.yml
         node_name   : used for baremetalConfig.yml
         name        : all others
+    Figure out which one is populated and return it
     """
-    if not obj:
-        return None
-
-    for key in ('name', 'id', 'region-name', 'node_name'):
-        if key in obj:
-            return key
+    if obj:
+        for key in ('name', 'id', 'region-name', 'node_name'):
+            if key in obj:
+                return key
 
 
 def read_model(model_dir):
@@ -50,7 +48,7 @@ def read_model(model_dir):
     out to the appropriate files
     """
 
-    # First read the top-level cloud config file
+    # First read and process the top-level cloud config file
     cloud_config_file = os.path.join(model_dir, CLOUD_CONFIG)
 
     model = {'name': None,
@@ -85,17 +83,18 @@ def read_model(model_dir):
         'files': [relname],
         'sections': collections.defaultdict(list),
         'fileSectionMap': collections.defaultdict(list),
-        'mtime': os.stat(cloud_config_file).st_mtime,
+        'mtime': int(1000 * os.stat(cloud_config_file).st_mtime),
         '_object_data': collections.defaultdict(list),
     }
     model['inputModel'] = {}
 
-    add_to_model(model, doc, relname)
+    add_doc_to_model(model, doc, relname)
 
+    # Now read and process all yml files in the dir tree below
     yml_re = re.compile(r'\.yml$')
     for root, dirs, files in os.walk(model_dir):
         for file in files:
-            # avoid processing top-leve cloud config again
+            # avoid processing top-level cloud config again
             if file == CLOUD_CONFIG:
                 continue
 
@@ -112,17 +111,17 @@ def read_model(model_dir):
             with open(filename) as f:
                 try:
                     doc = yaml.safe_load(f)
-                    add_to_model(model, doc, relname)
+                    add_doc_to_model(model, doc, relname)
                 except yaml.YAMLError:
                     LOG.exception("Invalid yaml file")
 
-    update_objects(model)
+    update_file_section_maps(model)
     del model['fileInfo']['_object_data']
 
     return model
 
 
-def add_to_model(model, doc, relname):
+def add_doc_to_model(model, doc, relname):
 
     index = 0
     for section, value in doc.iteritems():
@@ -162,7 +161,7 @@ def add_to_model(model, doc, relname):
             model['inputModel'][section].update(value)
 
 
-def update_objects(model):
+def update_file_section_maps(model):
     """
     Update fileSectionMaps for files that contain an objects section
     """
