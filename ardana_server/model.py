@@ -1,4 +1,4 @@
-from flask import abort, Blueprint, jsonify
+from flask import abort, Blueprint, jsonify, request
 import collections
 import logging
 import os
@@ -8,20 +8,32 @@ import yaml
 LOG = logging.getLogger(__name__)
 
 MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
-# = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model'))
+MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model'))
+
+NEW_MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model2'))
 
 CLOUD_CONFIG = "cloudConfig.yml"
 
 bp = Blueprint('model', __name__)
 
 
-@bp.route("/v2/model")
-def get_model():
-    try:
-        return jsonify(read_model(MODEL_DIR))
-    except Exception as e:
-        LOG.error(e)
-        abort(500)
+@bp.route("/v2/model", methods=['GET','POST'])
+def model():
+    if request.method == 'GET':
+        try:
+            return jsonify(read_model(MODEL_DIR))
+        except Exception as e:
+            LOG.error(e)
+            abort(500)
+
+    else:
+        model = request.get_json() or {}
+        try:
+            write_model(model, NEW_MODEL_DIR)
+        except Exception as e:
+            LOG.error(e)
+            abort(500)
+        return 'Success'
 
 
 def get_key_field(obj):
@@ -180,6 +192,7 @@ def update_file_section_maps(model):
 
                 mapping = {
                     'type': 'object',
+                    # FIXME{gary): should also have property key
                 }
                 model['fileInfo']['fileSectionMap'][relname].append(mapping)
         else:
@@ -188,5 +201,104 @@ def update_file_section_maps(model):
             model['fileInfo']['fileSectionMap'][relname].insert(index, section)
 
 
-def write_model(model_dir):
-    pass
+# Functions to write the model
+
+
+def write_model(model, model_dir):
+
+    # keep track of which sections of the input model have been written, in
+    # order to detect sections that have not been written (and hence must
+    # be new to the input model)
+    written = collections.defaultdict(list)
+    written_files = []
+
+    ALL = '__all_items_in_section__'
+
+    for filename, contents in model['fileInfo']['fileSectionMap'].iteritems():
+
+        new_content = {}
+
+        # contents is a list of sections in the file
+        for section in contents:
+            if isinstance(section, basestring):
+                # This section is just a flat name, like 'product',
+                # so get its value directly from the inputModel section
+                new_content[section] = model['inputModel'][section]
+                written[section].append(ALL)
+            else:
+                # This is a dict that either contains an entry
+                #   {'type' : 'object'
+                #    '<NAME>': {someobject} }
+                # or it contains
+                #   {'type' : 'array'
+                #    'keyField' : 'id' (or 'region-name' or 'name' or 'node_name'
+                #    '<NAME>': [ '<id1>', '<id2>' ]}
+                #    where <NAME> is the section name (e.g. disk-models), and
+                #    the value of that entry is a list of ids
+                section_type = section['type']
+                key_field = section.get('keyField')
+                section_name = [k for k in section.keys()
+                                if k not in ('type', 'keyField')][0]
+
+                if section_type == 'array':
+
+                    if len(model['fileInfo']['sections'][section_name]) == 1:
+                        # This section of the input model is contained in a
+                        # single file, so write out all members of this section 
+                        new_content[section_name] = model['inputModel'][section_name]
+                        written[section_name].append(ALL)
+                    else:
+                        # This section of the input model is contained in a
+                        # several files.
+
+                        # Get the list of ids
+                        ids = section[section_name]
+
+                        for model_item in model['inputModel'][section_name]:
+                            if model_item.get(key_field) in ids:
+                                written[section_name].append(model_item.get(key_field))
+                                if section_name not in new_content:
+                                    new_content[section_name] = []
+                                new_content[section_name].append(model_item)
+
+                else:
+                    # Handle section_type == 'object'
+                    pass
+
+        real_keys = [k for k in new_content.keys() if k != 'product']
+        if real_keys:
+            write_file(model_dir, filename, new_content)
+            written_files.append(filename)
+
+    # TODO(gary):
+    #    create new files for any sections that have not been written
+    #    delete any existing files that are no longer used
+
+def write_file(model_dir, filename, new_content):
+
+    filepath = os.path.join(model_dir, filename)
+
+    parent_dir = os.path.dirname(filepath)
+    if not os.access(parent_dir, os.R_OK):
+        os.makedirs(parent_dir)
+
+    old_content = {}
+    try:
+        if os.access(filepath, os.R_OK):
+            with open(filepath) as f:
+                old_content = yaml.safe_load(f)
+    except yaml.YAMLError:
+        LOG.exception("Invalid yaml file %s", filepath)
+    except IOError as e:
+        LOG.error(e)
+
+    # Avoid writing the file if the contents have not changes.  This preserves
+    # any comments that may exist in the old file
+    if new_content == old_content:
+        LOG.info("file %s unchanged", filename)
+    else:
+        LOG.info("Writing file %s", filename)
+        with open(filepath, "w") as f:
+            yaml.safe_dump(new_content, f, indent=2, default_flow_style=False, canonical=False)
+
+    # TODO(gary): consider writing old files to backup dir
