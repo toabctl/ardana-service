@@ -270,9 +270,8 @@ def write_model(model, model_dir):
             write_file(model_dir, filename, new_content)
             written_files.append(filename)
 
-    # TODO(gary):
-    #    create new files for any sections that have not been written
-    #    delete any existing files that are no longer used
+    # TODO(gary): create new files for any sections that have not been written
+    remove_obsolete(model_dir, written_files)
 
 def write_file(model_dir, filename, new_content):
 
@@ -295,10 +294,23 @@ def write_file(model_dir, filename, new_content):
     # Avoid writing the file if the contents have not changes.  This preserves
     # any comments that may exist in the old file
     if new_content == old_content:
-        LOG.info("file %s unchanged", filename)
+        LOG.info("Ignoring unchanged file %s", filename)
     else:
         LOG.info("Writing file %s", filename)
         with open(filepath, "w") as f:
             yaml.safe_dump(new_content, f, indent=2, default_flow_style=False, canonical=False)
 
     # TODO(gary): consider writing old files to backup dir
+
+def remove_obsolete(model_dir, keepers):
+
+    yml_re = re.compile(r'\.yml$')
+
+    for root, dirs, files in os.walk(model_dir):
+        for file in files:
+            fullname = os.path.join(root, file)
+            relname = os.path.relpath(fullname, model_dir)
+            if yml_re.search(file):
+                if relname not in keepers:
+                    LOG.info("Deleting obsolete file %s", fullname)
+                    os.unlink(fullname)
