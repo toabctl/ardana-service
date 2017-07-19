@@ -7,7 +7,7 @@ bp = Blueprint('admin', __name__)
 
 @bp.route("/v2/version")
 def version():
-    version_info = pbr.version.VersionInfo('ardana-server')
+    version_info = pbr.version.VersionInfo('ardana-service')
     return version_info.version_string()
 
 
