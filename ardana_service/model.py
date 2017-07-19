@@ -103,7 +103,6 @@ def read_model(model_dir):
     add_doc_to_model(model, doc, relname)
 
     # Now read and process all yml files in the dir tree below
-    yml_re = re.compile(r'\.yml$')
     for root, dirs, files in os.walk(model_dir):
         for file in files:
             # avoid processing top-level cloud config again
@@ -111,7 +110,7 @@ def read_model(model_dir):
                 continue
 
             relname = os.path.relpath(os.path.join(root, file), model_dir)
-            if yml_re.search(file):
+            if file.enswith('.yml'):
                 model['fileInfo']['files'].append(relname)
             elif file.startswith('README'):
                 ext = file[7:]
@@ -304,13 +303,12 @@ def write_file(model_dir, filename, new_content):
 
 def remove_obsolete(model_dir, keepers):
 
-    yml_re = re.compile(r'\.yml$')
-
+    # Remove any yml files that are no longer relevant, i.e. not in keepers
     for root, dirs, files in os.walk(model_dir):
         for file in files:
             fullname = os.path.join(root, file)
             relname = os.path.relpath(fullname, model_dir)
-            if yml_re.search(file):
+            if file.endswith('.yml'):
                 if relname not in keepers:
                     LOG.info("Deleting obsolete file %s", fullname)
                     os.unlink(fullname)
