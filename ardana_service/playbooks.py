@@ -93,8 +93,7 @@ def run_ready_deployment(opts, client_id):
 
 @bp.route("/v2/playbooks/<name>", methods=['POST'])
 def run_playbook(name):
-    """
-    Run an ansible playbook
+    """Run an ansible playbook
 
     JSON payload is an object that may contain key/value pairs that will be
     passed as command-line arguments to the ansible playbook.

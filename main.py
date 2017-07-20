@@ -1,9 +1,9 @@
-from flask import Flask
-from ardana_service import playbooks
 from ardana_service import admin
 from ardana_service import model
-from ardana_service import tasks
+from ardana_service import playbooks
 from ardana_service import socketio
+from ardana_service import tasks
+from flask import Flask
 import logging
 logging.basicConfig(level=logging.DEBUG)
 

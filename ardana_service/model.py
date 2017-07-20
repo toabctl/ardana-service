@@ -1,29 +1,32 @@
 from flask import abort, Blueprint, jsonify, request
 import collections
+import copy
 import logging
 import os
-import re
+import random
 import yaml
 
 LOG = logging.getLogger(__name__)
 
-MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
-MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model'))
+# MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
+MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__),
+                             '..', 'model'))
 
-NEW_MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', 'model2'))
+NEW_MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__),
+                                 '..', 'model2'))
 
 CLOUD_CONFIG = "cloudConfig.yml"
 
 bp = Blueprint('model', __name__)
 
 
-@bp.route("/v2/model", methods=['GET','POST'])
+@bp.route("/v2/model", methods=['GET', 'POST'])
 def model():
     if request.method == 'GET':
         try:
             return jsonify(read_model(MODEL_DIR))
         except Exception as e:
-            LOG.error(e)
+            LOG.exception(e)
             abort(500)
 
     else:
@@ -31,20 +34,19 @@ def model():
         try:
             write_model(model, NEW_MODEL_DIR)
         except Exception as e:
-            LOG.error(e)
+            LOG.exception(e)
             abort(500)
         return 'Success'
 
 
 def get_key_field(obj):
-    """
-    Several kinds of ids are used in the input model:
-        id          : used for servers.yml
-        region-name : used for swift/rings.yml
-        node_name   : used for baremetalConfig.yml
-        name        : all others
-    Figure out which one is populated and return it
-    """
+    #
+    # Several kinds of ids are used in the input model:
+    #     id          : used for servers.yml
+    #     region-name : used for swift/rings.yml
+    #     node_name   : used for baremetalConfig.yml
+    #     name        : all others
+    # Figure out which one is populated and return it
     if obj:
         for key in ('name', 'id', 'region-name', 'node_name'):
             if key in obj:
@@ -110,7 +112,7 @@ def read_model(model_dir):
                 continue
 
             relname = os.path.relpath(os.path.join(root, file), model_dir)
-            if file.enswith('.yml'):
+            if file.endswith('.yml'):
                 model['fileInfo']['files'].append(relname)
             elif file.startswith('README'):
                 ext = file[7:]
@@ -173,9 +175,8 @@ def add_doc_to_model(model, doc, relname):
 
 
 def update_file_section_maps(model):
-    """
-    Update fileSectionMaps for files that contain an objects section
-    """
+
+    # Update fileSectionMaps for files that contain an objects section
     for section, obj_list in model['fileInfo']['_object_data'].iteritems():
         if len(obj_list) > 1:
             # pass-through is the only section supported in multiple files
@@ -205,32 +206,29 @@ def update_file_section_maps(model):
 
 def write_model(model, model_dir):
 
-    # keep track of which sections of the input model have been written, in
-    # order to detect sections that have not been written (and hence must
-    # be new to the input model)
-    written = collections.defaultdict(list)
+    # Create a deep copy of the model
+    model = copy.deepcopy(model)
+
     written_files = []
 
-    ALL = '__all_items_in_section__'
-
-    for filename, contents in model['fileInfo']['fileSectionMap'].iteritems():
-
+    # Write portion of input model that correspond to existing files
+    file_section_map = model['fileInfo']['fileSectionMap']
+    for filename, sections in file_section_map.iteritems():
         new_content = {}
 
-        # contents is a list of sections in the file
-        for section in contents:
+        # sections is a list of sections in the file
+        for section in sections:
             if isinstance(section, basestring):
                 # This section is just a flat name, like 'product',
                 # so get its value directly from the inputModel section
                 new_content[section] = model['inputModel'][section]
-                written[section].append(ALL)
             else:
                 # This is a dict that either contains an entry
                 #   {'type' : 'object'
                 #    '<NAME>': {someobject} }
                 # or it contains
                 #   {'type' : 'array'
-                #    'keyField' : 'id' (or 'region-name' or 'name' or 'node_name'
+                #    'keyField' : 'id' (or 'region-name' or 'name', etc.
                 #    '<NAME>': [ '<id1>', '<id2>' ]}
                 #    where <NAME> is the section name (e.g. disk-models), and
                 #    the value of that entry is a list of ids
@@ -243,22 +241,29 @@ def write_model(model, model_dir):
 
                     if len(model['fileInfo']['sections'][section_name]) == 1:
                         # This section of the input model is contained in a
-                        # single file, so write out all members of this section 
-                        new_content[section_name] = model['inputModel'][section_name]
-                        written[section_name].append(ALL)
+                        # single file, so write out all members of this section
+                        new_content[section_name] = \
+                            model['inputModel'].pop(section_name)
+
                     else:
                         # This section of the input model is contained in a
-                        # several files.
+                        # several files.  Write out just the portions that
+                        # belong in this file
 
-                        # Get the list of ids
-                        ids = section[section_name]
+                        # Get the list of ids for this file
+                        our_ids = section[section_name]
 
                         for model_item in model['inputModel'][section_name]:
-                            if model_item.get(key_field) in ids:
-                                written[section_name].append(model_item.get(key_field))
+                            id = model_item.get(key_field)
+                            if id in our_ids:
                                 if section_name not in new_content:
                                     new_content[section_name] = []
                                 new_content[section_name].append(model_item)
+
+                        # Remove these from the model
+                        model['inputModel'][section_name] = \
+                            [k for k in model['inputModel'][section_name]
+                             if k[key_field] not in our_ids]
 
                 else:
                     # Handle section_type == 'object'
@@ -269,8 +274,87 @@ def write_model(model, model_dir):
             write_file(model_dir, filename, new_content)
             written_files.append(filename)
 
-    # TODO(gary): create new files for any sections that have not been written
+    # Write portion of input model that remain -- these have not been written
+    # to any file
+    for section_name, contents in model['inputModel'].iteritems():
+        # Skip those sections that have been entirely written
+        if not contents:
+            continue
+
+        # Skip the special 'product' section
+        if section_name == 'product':
+            continue
+
+        # TODO(gary): the old code had logic for suppressing objects other than
+        #   PASS_THROUGH.  Not sure if that is needed
+
+        data = {
+            'product': model['inputModel']['product'],
+        }
+
+        basename = section_name.replace('-', '_') + '.yml'
+
+        if section_name not in model['fileInfo']['sections']:
+            # brand new section
+            filename = os.path.join('data', basename + '.yml')
+
+            # TODO(gary): the old code had logic for extracting array
+            #             elements when contents was an array
+            data[section_name] = contents
+            write_file(model_dir, filename, data)
+        else:
+            # Count the entries in the fileSectionMap that contain only one
+            # instance of the given section
+            file_section_map = model['fileInfo']['fileSectionMap']
+            count = 0
+            for sections in file_section_map.values():
+                for section in sections:
+                    try:
+                        if len(section.get(section_name, [])) == 1:
+                            count += 1
+                    except TypeError:
+                        pass
+
+            # TODO(ary): set the data field
+            if isinstance(contents, list):
+                key_field = get_section_key_field(model, section_name)
+                if count == len(contents):
+                    # each element has its own file, so create new files
+                    # for each section
+                    for elt in contents:
+                        data[section_name] = [elt]
+
+                        filename = "%s_%s.yml" % (basename,
+                                                  elt[key_field])
+                        write_file(model_dir, filename, data)
+                else:
+                    # place all elements into a single file
+                    filename = "%s_%s.yml" % (basename,
+                                              contents[0][key_field])
+                    write_file(model_dir, filename, data)
+            else:
+                # not a list: write to a new file
+                name = section_name.replace('-', '_')
+                name += '%4x' % random.randrange(2 ** 32) + ".yml"
+
+                write_file(model_dir, filename, data)
+
+    # Remove any existing files in the output directory that are obsolete
     remove_obsolete(model_dir, written_files)
+
+
+def get_section_key_field(model, section_name):
+
+    # Find a file that contains the given section and get its key field
+    file_section_map = model['fileInfo']['fileSectionMap']
+    for filename, sections in file_section_map.iteritems():
+        for section in sections:
+            try:
+                if section_name in section:
+                    return section['key_field']
+            except TypeError:
+                pass
+
 
 def write_file(model_dir, filename, new_content):
 
@@ -297,9 +381,13 @@ def write_file(model_dir, filename, new_content):
     else:
         LOG.info("Writing file %s", filename)
         with open(filepath, "w") as f:
-            yaml.safe_dump(new_content, f, indent=2, default_flow_style=False, canonical=False)
+            yaml.safe_dump(new_content, f,
+                           indent=2,
+                           default_flow_style=False,
+                           canonical=False)
 
     # TODO(gary): consider writing old files to backup dir
+
 
 def remove_obsolete(model_dir, keepers):
 
