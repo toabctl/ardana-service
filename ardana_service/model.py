@@ -3,6 +3,7 @@ import collections
 import copy
 import logging
 import os
+import pdb
 import random
 import yaml
 
@@ -219,9 +220,16 @@ def write_model(model, model_dir):
         # sections is a list of sections in the file
         for section in sections:
             if isinstance(section, basestring):
+
                 # This section is just a flat name, like 'product',
-                # so get its value directly from the inputModel section
-                new_content[section] = model['inputModel'][section]
+                # so the section is just the name.
+                section_name = section
+
+                if section_name == 'product':
+                    new_content[section_name] = model['inputModel'][section_name]
+                else:
+                    new_content[section_name] = \
+                            model['inputModel'].pop(section_name)
             else:
                 # This is a dict that either contains an entry
                 #   {'type' : 'object'
@@ -266,7 +274,7 @@ def write_model(model, model_dir):
                              if k[key_field] not in our_ids]
 
                 else:
-                    # Handle section_type == 'object'
+                    # TODO: Handle section_type == 'object'
                     pass
 
         real_keys = [k for k in new_content.keys() if k != 'product']
@@ -292,7 +300,7 @@ def write_model(model, model_dir):
             'product': model['inputModel']['product'],
         }
 
-        basename = section_name.replace('-', '_') + '.yml'
+        basename = section_name.replace('-', '_')
 
         if section_name not in model['fileInfo']['sections']:
             # brand new section
@@ -302,6 +310,7 @@ def write_model(model, model_dir):
             #             elements when contents was an array
             data[section_name] = contents
             write_file(model_dir, filename, data)
+            written_files.append(filename)
         else:
             # Count the entries in the fileSectionMap that contain only one
             # instance of the given section
@@ -312,10 +321,10 @@ def write_model(model, model_dir):
                     try:
                         if len(section.get(section_name, [])) == 1:
                             count += 1
-                    except TypeError:
+                    except (TypeError, AttributeError):
                         pass
 
-            # TODO(ary): set the data field
+            # TODO(gary): set the data field
             if isinstance(contents, list):
                 key_field = get_section_key_field(model, section_name)
                 if count == len(contents):
@@ -327,17 +336,20 @@ def write_model(model, model_dir):
                         filename = "%s_%s.yml" % (basename,
                                                   elt[key_field])
                         write_file(model_dir, filename, data)
+                        written_files.append(filename)
                 else:
                     # place all elements into a single file
                     filename = "%s_%s.yml" % (basename,
                                               contents[0][key_field])
                     write_file(model_dir, filename, data)
+                    written_files.append(filename)
             else:
                 # not a list: write to a new file
                 name = section_name.replace('-', '_')
                 name += '%4x' % random.randrange(2 ** 32) + ".yml"
 
                 write_file(model_dir, filename, data)
+                written_files.append(filename)
 
     # Remove any existing files in the output directory that are obsolete
     remove_obsolete(model_dir, written_files)
@@ -385,8 +397,6 @@ def write_file(model_dir, filename, new_content):
                            indent=2,
                            default_flow_style=False,
                            canonical=False)
-
-    # TODO(gary): consider writing old files to backup dir
 
 
 def remove_obsolete(model_dir, keepers):
