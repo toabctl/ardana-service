@@ -204,13 +204,14 @@ def update_file_section_maps(model):
 
 # Functions to write the model
 
-
-def write_model(model, model_dir):
+def write_model(model, model_dir, dry_run=False):
 
     # Create a deep copy of the model
     model = copy.deepcopy(model)
 
-    written_files = []
+    # Keep track of what was written.  Key=filename, Value=content (None if
+    # file is deleted)
+    written_files = {}
 
     # Write portion of input model that correspond to existing files
     file_section_map = model['fileInfo']['fileSectionMap']
@@ -279,8 +280,8 @@ def write_model(model, model_dir):
 
         real_keys = [k for k in new_content.keys() if k != 'product']
         if real_keys:
-            write_file(model_dir, filename, new_content)
-            written_files.append(filename)
+            write_file(model_dir, filename, new_content, dry_run)
+            written_files[filename] = new_content
 
     # Write portion of input model that remain -- these have not been written
     # to any file
@@ -309,8 +310,8 @@ def write_model(model, model_dir):
             # TODO(gary): the old code had logic for extracting array
             #             elements when contents was an array
             data[section_name] = contents
-            write_file(model_dir, filename, data)
-            written_files.append(filename)
+            write_file(model_dir, filename, data, dry_run)
+            written_files[filename] = data
         else:
             # Count the entries in the fileSectionMap that contain only one
             # instance of the given section
@@ -335,24 +336,28 @@ def write_model(model, model_dir):
 
                         filename = "%s_%s.yml" % (basename,
                                                   elt[key_field])
-                        write_file(model_dir, filename, data)
-                        written_files.append(filename)
+                        write_file(model_dir, filename, data, dry_run)
+                        written_files[filename] = data
                 else:
                     # place all elements into a single file
                     filename = "%s_%s.yml" % (basename,
                                               contents[0][key_field])
-                    write_file(model_dir, filename, data)
-                    written_files.append(filename)
+                    write_file(model_dir, filename, data, dry_run)
+                    written_files[filename] = data
             else:
                 # not a list: write to a new file
                 name = section_name.replace('-', '_')
                 name += '%4x' % random.randrange(2 ** 32) + ".yml"
 
-                write_file(model_dir, filename, data)
-                written_files.append(filename)
+                write_file(model_dir, filename, data, dry_run)
+                written_files[filename] = data
 
     # Remove any existing files in the output directory that are obsolete
-    remove_obsolete(model_dir, written_files)
+    removed = remove_obsolete_files(model_dir, written_files.keys(), dry_run)
+    for filename in removed:
+        written_files[filename] = None
+
+    return written_files
 
 
 def get_section_key_field(model, section_name):
@@ -368,7 +373,7 @@ def get_section_key_field(model, section_name):
                 pass
 
 
-def write_file(model_dir, filename, new_content):
+def write_file(model_dir, filename, new_content, dry_run):
 
     filepath = os.path.join(model_dir, filename)
 
@@ -392,14 +397,18 @@ def write_file(model_dir, filename, new_content):
         LOG.info("Ignoring unchanged file %s", filename)
     else:
         LOG.info("Writing file %s", filename)
-        with open(filepath, "w") as f:
-            yaml.safe_dump(new_content, f,
-                           indent=2,
-                           default_flow_style=False,
-                           canonical=False)
+        if not dry_run:
+            with open(filepath, "w") as f:
+                yaml.safe_dump(new_content, f,
+                            indent=2,
+                            default_flow_style=False,
+                            canonical=False)
 
 
-def remove_obsolete(model_dir, keepers):
+def remove_obsolete_files(model_dir, keepers, dry_run):
+
+    # Report which files were deleted
+    removed = []
 
     # Remove any yml files that are no longer relevant, i.e. not in keepers
     for root, dirs, files in os.walk(model_dir):
@@ -409,4 +418,8 @@ def remove_obsolete(model_dir, keepers):
             if file.endswith('.yml'):
                 if relname not in keepers:
                     LOG.info("Deleting obsolete file %s", fullname)
-                    os.unlink(fullname)
+                    if not dry_run:
+                        os.unlink(fullname)
+                    removed.append(fullname)
+
+    return removed
