@@ -72,11 +72,16 @@ def read_model(model_dir):
              'fileInfo': {},
              'errors': [],
              }
+
     with open(cloud_config_file) as f:
         try:
             doc = yaml.safe_load(f)
         except yaml.YAMLError:
             LOG.exception("Invalid yaml file")
+            raise
+        except IOError:
+            LOG.exception("Unable to read yaml file")
+            raise
 
     if not doc:
         return model
@@ -113,21 +118,21 @@ def read_model(model_dir):
                 continue
 
             relname = os.path.relpath(os.path.join(root, file), model_dir)
+            filename = os.path.join(root, file)
             if file.endswith('.yml'):
                 model['fileInfo']['files'].append(relname)
+                with open(filename) as f:
+                    try:
+                        doc = yaml.safe_load(f)
+                        add_doc_to_model(model, doc, relname)
+                    except yaml.YAMLError:
+                        LOG.exception("Invalid yaml file")
+
             elif file.startswith('README'):
                 ext = file[7:]
-                with open(file) as f:
+                with open(filename) as f:
                     lines = f.readlines()
                 model['readme'][ext] = ''.join(lines)
-
-            filename = os.path.join(root, file)
-            with open(filename) as f:
-                try:
-                    doc = yaml.safe_load(f)
-                    add_doc_to_model(model, doc, relname)
-                except yaml.YAMLError:
-                    LOG.exception("Invalid yaml file")
 
     update_file_section_maps(model)
     del model['fileInfo']['_object_data']
@@ -209,8 +214,12 @@ def write_model(model, model_dir, dry_run=False):
     # Create a deep copy of the model
     model = copy.deepcopy(model)
 
-    # Keep track of what was written.  Key=filename, Value=content (None if
-    # file is deleted)
+    # Keep track of what was written.  Each file was
+    #    filename: {
+    #        data: <data written to file>
+    #        deleted: boolean    # Optional entry (absence = False)
+    #        changed: boolean    # Optional entry (absence = False)
+    #    }
     written_files = {}
 
     # Write portion of input model that correspond to existing files
@@ -280,8 +289,8 @@ def write_model(model, model_dir, dry_run=False):
 
         real_keys = [k for k in new_content.keys() if k != 'product']
         if real_keys:
-            write_file(model_dir, filename, new_content, dry_run)
-            written_files[filename] = new_content
+            changed = write_file(model_dir, filename, new_content, dry_run)
+            written_files[filename] = {'data': new_content, 'changed': changed}
 
     # Write portion of input model that remain -- these have not been written
     # to any file
@@ -310,8 +319,8 @@ def write_model(model, model_dir, dry_run=False):
             # TODO(gary): the old code had logic for extracting array
             #             elements when contents was an array
             data[section_name] = contents
-            write_file(model_dir, filename, data, dry_run)
-            written_files[filename] = data
+            changed = write_file(model_dir, filename, data, dry_run)
+            written_files[filename] = {'data': new_content, 'changed': changed}
         else:
             # Count the entries in the fileSectionMap that contain only one
             # instance of the given section
@@ -336,26 +345,29 @@ def write_model(model, model_dir, dry_run=False):
 
                         filename = "%s_%s.yml" % (basename,
                                                   elt[key_field])
-                        write_file(model_dir, filename, data, dry_run)
-                        written_files[filename] = data
+                        changed = write_file(model_dir, filename, data, dry_run)
+                        written_files[filename] = {'data': new_content,
+                                                   'changed': changed}
                 else:
                     # place all elements into a single file
                     filename = "%s_%s.yml" % (basename,
                                               contents[0][key_field])
-                    write_file(model_dir, filename, data, dry_run)
-                    written_files[filename] = data
+                    changed = write_file(model_dir, filename, data, dry_run)
+                    written_files[filename] = {'data': new_content,
+                                               'changed': changed}
             else:
                 # not a list: write to a new file
                 name = section_name.replace('-', '_')
                 name += '%4x' % random.randrange(2 ** 32) + ".yml"
 
                 write_file(model_dir, filename, data, dry_run)
-                written_files[filename] = data
+                written_files[filename] = {'data': new_content,
+                                           'changed': changed}
 
     # Remove any existing files in the output directory that are obsolete
     removed = remove_obsolete_files(model_dir, written_files.keys(), dry_run)
     for filename in removed:
-        written_files[filename] = None
+        written_files[filename] = {'data': None, 'deleted': True}
 
     return written_files
 
@@ -379,7 +391,8 @@ def write_file(model_dir, filename, new_content, dry_run):
 
     parent_dir = os.path.dirname(filepath)
     if not os.access(parent_dir, os.R_OK):
-        os.makedirs(parent_dir)
+        if not dry_run:
+            os.makedirs(parent_dir)
 
     old_content = {}
     try:
@@ -403,6 +416,9 @@ def write_file(model_dir, filename, new_content, dry_run):
                             indent=2,
                             default_flow_style=False,
                             canonical=False)
+
+    # Return an indication of whether a file was written (vs ignored)
+    return new_content != old_content
 
 
 def remove_obsolete_files(model_dir, keepers, dry_run):
