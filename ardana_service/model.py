@@ -20,6 +20,13 @@ CLOUD_CONFIG = "cloudConfig.yml"
 
 bp = Blueprint('model', __name__)
 
+# Define some constants to avoid problems caused by typos
+CHANGED = 'changed'
+IGNORED = 'ignored'
+DELETED = 'deleted'
+ADDED = 'added'
+
+PASS_THROUGH = 'pass-through'
 
 @bp.route("/v2/model", methods=['GET', 'POST'])
 def model():
@@ -41,7 +48,7 @@ def model():
 
 
 def get_key_field(obj):
-    #
+
     # Several kinds of ids are used in the input model:
     #     id          : used for servers.yml
     #     region-name : used for swift/rings.yml
@@ -134,20 +141,20 @@ def read_model(model_dir):
                     lines = f.readlines()
                 model['readme'][ext] = ''.join(lines)
 
-    update_file_section_maps(model)
-    del model['fileInfo']['_object_data']
+    # Update metadata related to pass-through, if necessary
+    update_pass_through(model)
 
     return model
 
 
 def add_doc_to_model(model, doc, relname):
 
-    index = 0
     for section, value in doc.iteritems():
-        # Capture which section names belong in each file
+        # Add to fileInfo / sections
         model['fileInfo']['sections'][section].append(relname)
 
         if isinstance(value, list):
+            # Add to fileInfo / fileSectionMap
             key_field = get_key_field(value[0])
             mapping = {
                 'keyField': key_field,
@@ -156,70 +163,71 @@ def add_doc_to_model(model, doc, relname):
             }
             model['fileInfo']['fileSectionMap'][relname].append(mapping)
 
-        elif isinstance(value, dict) and section != 'product':
-            # product, which always is the dict {'version':2}, is handled as a
-            # primitive
-            # Track where objects are, but don't add them to the fileSectionMap
-            # yet
-            obj = {'index': index,
-                   'file': relname,
-                   'data': value}
-            model['fileInfo']['_object_data'][section].append(obj)
-            index += 1
-
-        else:  # primitive or product
-            model['fileInfo']['fileSectionMap'][relname].append(section)
-
-        if isinstance(value, list):
+            # Add to inputModel
             if section not in model['inputModel']:
                 model['inputModel'][section] = []
             model['inputModel'][section].extend(value)
-        else:
+
+        elif isinstance(value, dict) and section == PASS_THROUGH:
+            key_fields = []
             if section not in model['inputModel']:
                 model['inputModel'][section] = {}
-            model['inputModel'][section].update(value)
 
+            for key, val in value.iteritems():
 
-def update_file_section_maps(model):
+                # if pass-through section contains a nested dictionary, add
+                #    each of the keys of that nested dict
+                if isinstance(val, dict):
+                    key_fields.extend([".".join((key, n)) for n in val.keys()])
+                    if key not in model['inputModel'][section]:
+                        model['inputModel'][section][key] = {}
+                    model['inputModel'][section][key].update(val)
+                else:
+                    key_fields.append(key)
+                    model['inputModel'][section][key] = val
 
-    # Update fileSectionMaps for files that contain an objects section
-    for section, obj_list in model['fileInfo']['_object_data'].iteritems():
-        if len(obj_list) > 1:
-            # pass-through is the only section supported in multiple files
-            if section != 'pass-through':
-                raise Exception('The section %s has been found in multiple '
-                                'files, which is not currently supported' %
-                                section)
-
-            # FIXME(gary): Handling pass-through sections is borked.  This has
-            # to be tested with one of the models that has them
-            for obj in obj_list:
-                relname = obj['file']
-
-                mapping = {
-                    'type': 'object',
-                    # FIXME{gary): should also have property key
-                }
-                model['fileInfo']['fileSectionMap'][relname].append(mapping)
+            mapping = {
+                PASS_THROUGH: key_fields,
+                'type': 'object'
+            }
+            model['fileInfo']['fileSectionMap'][relname].append(mapping)
         else:
-            relname = obj_list[0]['file']
-            index = obj_list[0]['index']
-            model['fileInfo']['fileSectionMap'][relname].insert(index, section)
+            # primitive, or some dict other than pass-through.
+            model['fileInfo']['fileSectionMap'][relname].append(section)
+            model['inputModel'][section] = value
 
+
+def update_pass_through(model):
+
+    # If there is only one file containing pass-through data, then its
+    # entry in fileInfo / fileSectionMap should be stripped of its nested keys
+    # and become a simple string
+
+    if len(model['fileInfo']['sections'][PASS_THROUGH]) == 1:
+        filename = model['fileInfo']['sections'][PASS_THROUGH]
+
+        for i,val in enumerate(model['fileInfo']['fileSectionMap'][filename]):
+            if isinstance(val, dict) and PASS_THROUGH in sec:
+                model['fileInfo']['fileSectionMap'][filename][i] = \
+                        PASS_THROUGH
+                break
 
 # Functions to write the model
 
-def write_model(model, model_dir, dry_run=False):
+def write_model(in_model, model_dir, dry_run=False):
 
-    # Create a deep copy of the model
-    model = copy.deepcopy(model)
+    # Create a deep copy of the model to avoid munging the model that was
+    # passed in
+    model = copy.deepcopy(in_model)
 
-    # Keep track of what was written.  Each file was
+    # Keep track of what was written, by creating a dict with this format:
     #    filename: {
     #        data: <data written to file>
-    #        deleted: boolean    # Optional entry (absence = False)
-    #        changed: boolean    # Optional entry (absence = False)
+    #        status: DELETED | CHANGED | ADDED | IGNORED
     #    }
+    # This is mostly used for unit testing (too return what has changed), but
+    # some of this information is also used to detect whether a stale file
+    # is lingering in the model dir and that needs to be removed
     written_files = {}
 
     # Write portion of input model that correspond to existing files
@@ -231,8 +239,10 @@ def write_model(model, model_dir, dry_run=False):
         for section in sections:
             if isinstance(section, basestring):
 
-                # This section is just a flat name, like 'product',
-                # so the section is just the name.
+                # This section is just a flat name so the section is just the name.
+                # Note that this will process primitive types as well as
+                # single-file pass-through's (which contain no details in the
+                # map)
                 section_name = section
 
                 if section_name == 'product':
@@ -241,17 +251,19 @@ def write_model(model, model_dir, dry_run=False):
                     new_content[section_name] = \
                             model['inputModel'].pop(section_name)
             else:
-                # This is a dict that either contains an entry
-                #   {'type' : 'object'
-                #    '<NAME>': {someobject} }
-                # or it contains
-                #   {'type' : 'array'
+                # This is a dict that either defines an array (i.e. list)
+                #   {'type' : 'array'  <-
                 #    'keyField' : 'id' (or 'region-name' or 'name', etc.
                 #    '<NAME>': [ '<id1>', '<id2>' ]}
                 #    where <NAME> is the section name (e.g. disk-models), and
                 #    the value of that entry is a list of ids
+                #
+                # or it contains an entry (i.e. dict) for pass-through:
+                #   {'type' : 'object'
+                #    'pass-through': ['k1.k2', 'k1.k3', 'k4']   <- dotted keys
+                #   }
+
                 section_type = section['type']
-                key_field = section.get('keyField')
                 section_name = [k for k in section.keys()
                                 if k not in ('type', 'keyField')][0]
 
@@ -270,6 +282,7 @@ def write_model(model, model_dir, dry_run=False):
 
                         # Get the list of ids for this file
                         our_ids = section[section_name]
+                        key_field = section.get('keyField')
 
                         for model_item in model['inputModel'][section_name]:
                             id = model_item.get(key_field)
@@ -284,18 +297,51 @@ def write_model(model, model_dir, dry_run=False):
                              if k[key_field] not in our_ids]
 
                 else:
-                    # TODO: Handle section_type == 'object'
-                    pass
+                    # Pass-throughs that are spread across multiple files
+                    for dotted_key in section[PASS_THROUGH]:
+                        key_list = dotted_key.split('.')
+
+                        if PASS_THROUGH not in new_content:
+                            new_content[PASS_THROUGH] = {}
+
+                        if len(key_list) == 1:
+                            # There was no dot, so copy the whole dict over
+                            key = key_list[0]
+
+                            # Use a try block to deal with the situation where
+                            # the map says that an entry should exist in the
+                            # inputModel, but there isn't one there (i.e. it
+                            # has been deleted)
+                            try:
+                                new_content[PASS_THROUGH][key] = \
+                                    model['inputModel'][PASS_THROUGH].pop(key)
+                            except (TypeError, KeyError):
+                                pass
+                        else:
+                            # There was a dot, so there is a nested dict,
+                            # so we have to update any existing one
+                            (first, second) = key_list
+                            if first not in new_content[PASS_THROUGH]:
+                                new_content[PASS_THROUGH][first] = {}
+                            try:
+                                new_content[PASS_THROUGH][first][second] = \
+                                    model['inputModel'][PASS_THROUGH]\
+                                        [first].pop(second)
+                                # Remove the dictionary if it is now empty
+                                if not model['inputModel'][PASS_THROUGH][first]:
+                                    model['inputModel'][PASS_THROUGH].pop(first)
+                            except (TypeError, KeyError):
+                                pass
 
         real_keys = [k for k in new_content.keys() if k != 'product']
         if real_keys:
-            changed = write_file(model_dir, filename, new_content, dry_run)
-            written_files[filename] = {'data': new_content, 'changed': changed}
+            status = write_file(model_dir, filename, new_content, dry_run)
+            written_files[filename] = {'data': new_content, 'status': status}
 
     # Write portion of input model that remain -- these have not been written
     # to any file
     for section_name, contents in model['inputModel'].iteritems():
-        # Skip those sections that have been entirely written
+        # Skip those sections that have been entirely written and removed
         if not contents:
             continue
 
@@ -303,74 +349,74 @@ def write_model(model, model_dir, dry_run=False):
         if section_name == 'product':
             continue
 
-        # TODO(gary): the old code had logic for suppressing objects other than
-        #   PASS_THROUGH.  Not sure if that is needed
+        data = { 'product': model['inputModel']['product'] }
 
-        data = {
-            'product': model['inputModel']['product'],
-        }
-
-        basename = section_name.replace('-', '_')
+        basename = os.path.join('data', section_name.replace('-', '_'))
 
         if section_name not in model['fileInfo']['sections']:
             # brand new section
-            filename = os.path.join('data', basename + '.yml')
+            filename = basename + '.yml'
 
-            # TODO(gary): the old code had logic for extracting array
-            #             elements when contents was an array
             data[section_name] = contents
-            changed = write_file(model_dir, filename, data, dry_run)
-            written_files[filename] = {'data': new_content, 'changed': changed}
-        else:
-            # Count the entries in the fileSectionMap that contain only one
-            # instance of the given section
-            file_section_map = model['fileInfo']['fileSectionMap']
-            count = 0
-            for sections in file_section_map.values():
-                for section in sections:
-                    try:
-                        if len(section.get(section_name, [])) == 1:
-                            count += 1
-                    except (TypeError, AttributeError):
-                        pass
+            status = write_file(model_dir, filename, data, dry_run)
+            written_files[filename] = {'data': new_content, 'status': status}
 
-            # TODO(gary): set the data field
-            if isinstance(contents, list):
-                key_field = get_section_key_field(model, section_name)
-                if count == len(contents):
-                    # each element has its own file, so create new files
-                    # for each section
-                    for elt in contents:
-                        data[section_name] = [elt]
+        elif isinstance(contents, list):
 
-                        filename = "%s_%s.yml" % (basename,
-                                                  elt[key_field])
-                        changed = write_file(model_dir, filename, data, dry_run)
-                        written_files[filename] = {'data': new_content,
-                                                   'changed': changed}
-                else:
-                    # place all elements into a single file
+            key_field = get_section_key_field(model, section_name)
+            if is_split_into_equal_number_of_files(model, section_name):
+                # each entry in the list should be written to a separate file,
+                # so create new files for each section
+                for elt in contents:
+                    data[section_name] = [elt]
+
                     filename = "%s_%s.yml" % (basename,
-                                              contents[0][key_field])
-                    changed = write_file(model_dir, filename, data, dry_run)
+                                                elt[key_field])
+                    status = write_file(model_dir, filename, data, dry_run)
                     written_files[filename] = {'data': new_content,
-                                               'changed': changed}
+                                                'status': status}
             else:
-                # not a list: write to a new file
-                name = section_name.replace('-', '_')
-                name += '%4x' % random.randrange(2 ** 32) + ".yml"
-
-                write_file(model_dir, filename, data, dry_run)
+                # place all elements of the list into a single file
+                data[section_name] = contents
+                filename = "%s_%s.yml" % (basename,
+                                            contents[0][key_field])
+                status = write_file(model_dir, filename, data, dry_run)
                 written_files[filename] = {'data': new_content,
-                                           'changed': changed}
+                                            'status': status}
+        else:
+            # Not a list, so therefore it must be pass-through data that did
+            # correspond to known any existing passthrough file. All remaining
+            # entries should be written to a single file
+            data[section_name] = contents
+            filename = "%s_%s.yml" % (basename,
+                                      '%4x' % random.randrange(2 ** 32))
+
+            status = write_file(model_dir, filename, data, dry_run)
+            written_files[filename] = {'data': new_content,
+                                       'status': status}
 
     # Remove any existing files in the output directory that are obsolete
     removed = remove_obsolete_files(model_dir, written_files.keys(), dry_run)
     for filename in removed:
-        written_files[filename] = {'data': None, 'deleted': True}
+        written_files[filename] = {'data': None, 'status': DELETED}
 
     return written_files
 
+
+def is_split_into_equal_number_of_files(model, section_name):
+
+    # Count the entries in the fileSectionMap that contain only one
+    # instance of the given section
+
+    file_section_map = model['fileInfo']['fileSectionMap']
+    for sections in file_section_map.values():
+        for section in sections:
+            if isinstance(section, dict) and section_name in section:
+                id_list = section[section_name]
+                if len(id_list) != 1:
+                    return
+
+    return True
 
 def get_section_key_field(model, section_name):
 
@@ -380,8 +426,8 @@ def get_section_key_field(model, section_name):
         for section in sections:
             try:
                 if section_name in section:
-                    return section['key_field']
-            except TypeError:
+                    return section['keyField']
+            except (TypeError, KeyError, AttributeError):
                 pass
 
 
@@ -395,8 +441,10 @@ def write_file(model_dir, filename, new_content, dry_run):
             os.makedirs(parent_dir)
 
     old_content = {}
+    existed = False
     try:
         if os.access(filepath, os.R_OK):
+            existed = True
             with open(filepath) as f:
                 old_content = yaml.safe_load(f)
     except yaml.YAMLError:
@@ -408,6 +456,7 @@ def write_file(model_dir, filename, new_content, dry_run):
     # any comments that may exist in the old file
     if new_content == old_content:
         LOG.info("Ignoring unchanged file %s", filename)
+        return IGNORED
     else:
         LOG.info("Writing file %s", filename)
         if not dry_run:
@@ -418,7 +467,8 @@ def write_file(model_dir, filename, new_content, dry_run):
                             canonical=False)
 
     # Return an indication of whether a file was written (vs ignored)
-    return new_content != old_content
+    status = CHANGED if existed else ADDED
+    return status
 
 
 def remove_obsolete_files(model_dir, keepers, dry_run):
@@ -436,6 +486,6 @@ def remove_obsolete_files(model_dir, keepers, dry_run):
                     LOG.info("Deleting obsolete file %s", fullname)
                     if not dry_run:
                         os.unlink(fullname)
-                    removed.append(fullname)
+                    removed.append(relname)
 
     return removed
