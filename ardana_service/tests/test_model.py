@@ -10,12 +10,16 @@ class MyTest(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(MyTest, self).__init__(*args, **kwargs)
-        self.model_dir = os.path.join(os.path.dirname(__file__), 'test_data')
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model_dir = os.path.join(os.path.dirname(__file__), 'test_data')
+        cls.test_data = model.read_model(cls.model_dir)
 
 
-    def test_read_valid_model(self):
-        data = model.read_model(self.model_dir)
-        self.assertIsNotNone(data)
+    def setUp(self):
+        # Start each test with a fresh copy of the test data
+        self.data = copy.deepcopy(self.test_data)
 
 
     def test_read_model_missing_config(self):
@@ -37,8 +41,7 @@ class MyTest(unittest.TestCase):
 
 
     def test_no_changes(self):
-        data = model.read_model(self.model_dir)
-        changes = model.write_model(data, self.model_dir, dry_run=True)
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
 
         affected_files = [k for k,v in changes.iteritems()
                           if v['status'] != model.IGNORED]
@@ -46,19 +49,17 @@ class MyTest(unittest.TestCase):
 
 
     def test_add_servers(self):
-        data = model.read_model(self.model_dir)
-
-        before_len = len(data['inputModel']['servers'])
+        before_len = len(self.data['inputModel']['servers'])
 
         num_to_add = 5
         # grab last server and make extra copies of it
-        server = data['inputModel']['servers'][-1:][0]
+        server = self.data['inputModel']['servers'][-1:][0]
         for i in range(0, num_to_add):
             clone = copy.deepcopy(server)
             clone['id'] = 'server-%s' % i
-            data['inputModel']['servers'].append(clone)
+            self.data['inputModel']['servers'].append(clone)
 
-        changes = model.write_model(data, self.model_dir, dry_run=True)
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
         changed_files = [k for k,v in changes.iteritems()
                          if v['status'] == model.CHANGED]
 
@@ -69,58 +70,171 @@ class MyTest(unittest.TestCase):
 
 
     def test_add_disk_models(self):
-        data = model.read_model(self.model_dir)
-
-        before_len = len(data['inputModel']['servers'])
+        before_len = len(self.data['inputModel']['servers'])
 
         num_to_add = 5
         # grab last disk model and make extra copies of it
-        disk_model = data['inputModel']['disk-models'][-1:][0]
+        disk_model = self.data['inputModel']['disk-models'][-1:][0]
         for i in range(0, num_to_add):
             clone = copy.deepcopy(disk_model)
             clone['name'] = 'model-%s' % i
-            data['inputModel']['disk-models'].append(clone)
+            self.data['inputModel']['disk-models'].append(clone)
 
-        changes = model.write_model(data, self.model_dir, dry_run=True)
-        print "test_add_disk_models: ", {k:v['status'] for k,v in changes.iteritems() if v['status'] != 'ignored'}
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
         added_files = [k for k,v in changes.iteritems()
                        if v['status'] == model.ADDED]
 
         self.assertEquals(num_to_add, len(added_files))
 
 
-    @unittest.skip("Skipping")
-    def test_add_split_models(self):
-        pass
+    def test_add_to_uneven_split(self):
+        # Manipulate the model to make it appear that the 3 disk-models are
+        # distributed over just 2 files rather than 3.
+        source = 'data/disks_compute.yml'
+        dest = 'data/disks_controller_1TB.yml'
+        model_name = 'COMPUTE-DISKS'
+
+        # Move the model to one of the other file sections
+        self.data['fileInfo']['fileSectionMap'].pop(source)
+
+        for section in self.data['fileInfo']['fileSectionMap'][dest]:
+            if isinstance(section, dict) and 'disk-models' in section:
+                section['disk-models'].append(model_name)
+                break
+        self.data['fileInfo']['files'] = [f for f in self.data['fileInfo']['files']
+             if f != source]
+        self.data['fileInfo']['sections']['disk-models'] = [f for f in 
+                self.data['fileInfo']['sections']['disk-models'] if f != source]
+
+        # Now add 2 disk-models
+        self.data['inputModel']['disk-models'].append({"name": "FOO"})
+        self.data['inputModel']['disk-models'].append({"name": "BAR"})
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        # There should be one file added with two disk models
+        added = {k:v for k,v in changes.iteritems() if v['status'] == model.ADDED}
+        self.assertEquals(1, len(added))
+
+        # Remove the product for comparison to the added data
+        new_data = added.values()[0]['data']
+
+        # Should have 2 new disk models in the file (FOO and BAR)
+        self.assertEquals(['FOO','BAR'], [f['name'] for f in new_data['disk-models']])
 
 
-    @unittest.skip("Skipping")
-    def test_add_new_section(self):
-        pass
+    def test_add_new_dict(self):
+        added_dict = {'foo': {'bar': 'baz'}}
+        self.data['inputModel'].update(added_dict)
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.ADDED, info['status'])
+
+        # Remove the product for comparison to the added data
+        new_data = changed.values()[0]['data']
+        new_data.pop('product')
+
+        self.assertEquals(added_dict, new_data)
 
 
-    @unittest.skip("Skipping")
+    def test_add_new_list(self):
+        added_list = {'foo': [{'name': 'bar'}, {'name': 'baz'}]}
+        self.data['inputModel'].update(added_list)
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.ADDED, info['status'])
+
+        # Remove the product for comparison to the added data
+        new_data = changed.values()[0]['data']
+        new_data.pop('product')
+
+        self.assertEquals(added_list, new_data)
+
+
+    def test_update_dict(self):
+        # Modify the 'cloud' section, which is part of cloudConfig.yml
+        self.data['inputModel']['cloud']['foo'] = 'bar'
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        self.assertIn('cloudConfig.yml', changed)
+
+        info = changed.values()[0]
+        self.assertEquals(model.CHANGED, info['status'])
+
+
     def test_update_pass_through(self):
-        # Note: need to add pass-through to the existing test data
-        pass
+        # Modify one of the values in data/neutron_passthrough.yml
+        self.data['inputModel']['pass-through']['global']['esx_cloud2'] = False
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.CHANGED, info['status'])
+
+        self.assertIn('data/neutron_passthrough.yml', changed)
+        self.assertIn('esx_cloud2', info['data']['pass-through']['global'])
 
 
-    @unittest.skip("Skipping")
     def test_add_pass_through(self):
-        pass
+
+        # Modify one value in the existing pass-through.global dict
+        self.data['inputModel']['pass-through']['global']['foo'] = 'bar'
+
+        # And create a brand new section in pass-through
+        self.data['inputModel']['pass-through']['newsection'] = 'baz'
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.ADDED, info['status'])
+
+        filename = changed.keys()[0]
+
+        # Should create some random filename that begins with pass-through
+        self.assertTrue(filename.startswith('data/pass_through_'))
+
+        self.assertIn('foo', info['data']['pass-through']['global'])
+        self.assertIn('newsection', info['data']['pass-through'])
 
 
-    @unittest.skip("Skipping")
     def test_delete_pass_through(self):
-        pass
+        # Delete the only value in one of the pass-through sections
+        self.data['inputModel']['pass-through']['global'].pop('esx_cloud2')
 
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
 
-    @unittest.skip("Skipping")
-    def test_add_new_object(self):
-        pass
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
 
+        info = changed.values()[0]
+        self.assertEquals(model.DELETED, info['status'])
 
-    @unittest.skip("Skipping")
-    def test_write_two_non_split_objects(self):
-        pass
-
+        filename = changed.keys()[0]
+        self.assertIn('data/neutron_passthrough.yml', changed)

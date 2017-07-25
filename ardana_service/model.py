@@ -297,39 +297,47 @@ def write_model(in_model, model_dir, dry_run=False):
                              if k[key_field] not in our_ids]
 
                 else:
+                    inputPassThru = model['inputModel'].get(PASS_THROUGH)
+                    if not inputPassThru:
+                        continue
+
                     # Pass-throughs that are spread across multiple files
                     for dotted_key in section[PASS_THROUGH]:
                         key_list = dotted_key.split('.')
-
-                        if PASS_THROUGH not in new_content:
-                            new_content[PASS_THROUGH] = {}
 
                         if len(key_list) == 1:
                             # There was no dot, so copy the whole dict over
                             key = key_list[0]
 
-                            # Use a try block to deal with the situation where
-                            # the map says that an entry should exist in the
-                            # inputModel, but there isn't one there (i.e. it
-                            # has been deleted)
-                            try:
-                                new_content[PASS_THROUGH][key] = \
-                                    model['inputModel'][PASS_THROUGH].pop(key)
-                            except (TypeError, KeyError):
-                                pass
+                            if key in inputPassThru:
+                                val = inputPassThru.pop(key)
+
+                            if PASS_THROUGH not in new_content:
+                                new_content[PASS_THROUGH] = {}
+                            new_content[PASS_THROUGH][key] = val
                         else:
                             # There was a dot, so there is a nested dict,
                             # so we have to update any existing one
                             (first, second) = key_list
-                            if first not in new_content[PASS_THROUGH]:
-                                new_content[PASS_THROUGH][first] = {}
+
+                            # A try is needed in case first is not in input
+                            # model
                             try:
-                                new_content[PASS_THROUGH][first][second] = \
-                                    model['inputModel'][PASS_THROUGH]\
-                                        [first].pop(second)
+                                if second in inputPassThru[first]:
+                                    val = inputPassThru[first].pop(second)
+
+                                    if PASS_THROUGH not in new_content:
+                                        new_content[PASS_THROUGH] = {}
+                                    if first not in new_content[PASS_THROUGH]:
+                                        new_content[PASS_THROUGH][first] = {}
+
+                                    new_content[PASS_THROUGH][first][second] \
+                                            = val
+
                                 # Remove the dictionary if it is now empty
-                                if not model['inputModel'][PASS_THROUGH][first]:
-                                    model['inputModel'][PASS_THROUGH].pop(first)
+                                if not inputPassThru[first]:
+                                    inputPassThru.pop(first)
+
                             except (TypeError, KeyError):
                                 pass
 
@@ -359,7 +367,7 @@ def write_model(in_model, model_dir, dry_run=False):
 
             data[section_name] = contents
             status = write_file(model_dir, filename, data, dry_run)
-            written_files[filename] = {'data': new_content, 'status': status}
+            written_files[filename] = {'data': data, 'status': status}
 
         elif isinstance(contents, list):
 
@@ -373,16 +381,14 @@ def write_model(in_model, model_dir, dry_run=False):
                     filename = "%s_%s.yml" % (basename,
                                                 elt[key_field])
                     status = write_file(model_dir, filename, data, dry_run)
-                    written_files[filename] = {'data': new_content,
-                                                'status': status}
+                    written_files[filename] = {'data': data, 'status': status}
             else:
                 # place all elements of the list into a single file
                 data[section_name] = contents
                 filename = "%s_%s.yml" % (basename,
                                             contents[0][key_field])
                 status = write_file(model_dir, filename, data, dry_run)
-                written_files[filename] = {'data': new_content,
-                                            'status': status}
+                written_files[filename] = {'data': data, 'status': status}
         else:
             # Not a list, so therefore it must be pass-through data that did
             # correspond to known any existing passthrough file. All remaining
@@ -392,8 +398,7 @@ def write_model(in_model, model_dir, dry_run=False):
                                       '%4x' % random.randrange(2 ** 32))
 
             status = write_file(model_dir, filename, data, dry_run)
-            written_files[filename] = {'data': new_content,
-                                       'status': status}
+            written_files[filename] = {'data': data, 'status': status}
 
     # Remove any existing files in the output directory that are obsolete
     removed = remove_obsolete_files(model_dir, written_files.keys(), dry_run)
