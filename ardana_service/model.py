@@ -47,6 +47,26 @@ def model():
         return 'Success'
 
 
+@bp.route("/api/v2/model/is_encrypted", methods=['GET'])
+def get_encrypted():
+    return jsonify({"isEncrypted": False})
+
+
+@bp.route("/api/v2/model/entities", methods=['GET'])
+def get_all_entities():
+    return 'Success'
+
+
+@bp.route("/api/v2/model/entities/<entity>", methods=['GET', 'POST', 'PUT'])
+def whole_entity(entity):
+    return 'Success'
+
+
+@bp.route("/api/v2/model/entities/<entity>/<id>", methods=['DELETE', 'GET', 'PUT'])
+def entry(entity, id):
+    return 'Success'
+
+
 def get_key_field(obj):
 
     # Several kinds of ids are used in the input model:
