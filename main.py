@@ -8,6 +8,7 @@ from ardana_service import socketio
 from ardana_service import tasks
 from ardana_service import templates
 from ardana_service import versions
+from config import config
 from flask import Flask
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -25,6 +26,8 @@ app.register_blueprint(templates.bp)
 app.register_blueprint(versions.bp)
 
 if __name__ == "__main__":
+
+    app.config.from_mapping(config.get_flask_config())
     # app.run(debug=True)
     socketio.init_app(app)
     socketio.run(app, use_reloader=True)
