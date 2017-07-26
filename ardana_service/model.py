@@ -28,7 +28,7 @@ ADDED = 'added'
 
 PASS_THROUGH = 'pass-through'
 
-@bp.route("/v2/model", methods=['GET', 'POST'])
+@bp.route("/api/v2/model", methods=['GET', 'POST'])
 def model():
     if request.method == 'GET':
         try:

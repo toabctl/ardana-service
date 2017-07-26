@@ -23,7 +23,7 @@ LOGS_DIR = "/projects/logs"
 tasks = {}
 
 
-@bp.route("/v2/playbooks")
+@bp.route("/api/v2/playbooks")
 def playbooks():
 
     yml_re = re.compile(r'\.yml$')
@@ -91,7 +91,7 @@ def run_ready_deployment(opts, client_id):
     pass
 
 
-@bp.route("/v2/playbooks/<name>", methods=['POST'])
+@bp.route("/api/v2/playbooks/<name>", methods=['POST'])
 def run_playbook(name):
     """Run an ansible playbook
 
@@ -138,7 +138,7 @@ def run_playbook(name):
 
 
 # TODO(gary): support (and require), maxSize parameter
-@bp.route("/v2/plays/<id>/log")
+@bp.route("/api/v2/plays/<id>/log")
 def get_log(id):
     # For security, send_from_directory avoids sending any files
     # outside of the specified directory
