@@ -1,5 +1,7 @@
 from flask import abort, Blueprint, jsonify, request, \
     send_from_directory, url_for
+import model
+import config.config as config
 import logging
 import os
 
@@ -8,16 +10,38 @@ LOG = logging.getLogger(__name__)
 
 bp = Blueprint('templates', __name__)
 
-# TODO(gary): read this configuration from a config file
-TEMPLATES_DIR = os.path.expanduser("~/dev/scratch/ansible/next/hos/ansible")
-LOGS_DIR = "/projects/logs"
+TEMPLATES_DIR = config.get_dir("templates_dir")
 
 @bp.route("/api/v2/templates")
 def get_all_templates():
+
     templates = []
+    for name in os.listdir(TEMPLATES_DIR):
+
+        readme = os.path.join(TEMPLATES_DIR, name, "README.html")
+        try:
+            with open(readme) as f:
+                lines = f.readlines()
+            overview = ''.join(lines)
+
+            templates.append({
+                'name': name,
+                'href': '/'.join(('/api/v2/templates', name)),
+                'overview': overview
+            })
+
+        except IOError:
+            pass
+
     return jsonify(sorted(templates))
+
 
 @bp.route("/api/v2/templates/<name>")
 def get_template(name):
-    template = {}
-    return jsonify(sorted(template))
+
+    model_dir = os.path.join(TEMPLATES_DIR, name)
+    try:
+        return jsonify(model.read_model(model_dir))
+    except Exception as e:
+        LOG.exception(e)
+        abort(500)
