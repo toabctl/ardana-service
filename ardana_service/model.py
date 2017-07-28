@@ -1,6 +1,7 @@
 from flask import abort, Blueprint, jsonify, request
 import collections
 import copy
+import config.config as config
 import logging
 import os
 import pdb
@@ -9,12 +10,7 @@ import yaml
 
 LOG = logging.getLogger(__name__)
 
-# MODEL_DIR = os.path.expanduser("~/dev/helion/my_cloud/definition")
-MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__),
-                             '..', 'model'))
-
-NEW_MODEL_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__),
-                                 '..', 'model2'))
+MODEL_DIR = config.get_dir("model_dir")
 
 CLOUD_CONFIG = "cloudConfig.yml"
 
@@ -40,7 +36,7 @@ def model():
     else:
         model = request.get_json() or {}
         try:
-            write_model(model, NEW_MODEL_DIR)
+            write_model(model, MODEL_DIR)
         except Exception as e:
             LOG.exception(e)
             abort(500)

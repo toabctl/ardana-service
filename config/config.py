@@ -1,6 +1,7 @@
 from ConfigParser import SafeConfigParser
 import logging
 import os
+import pdb
 import sys
 
 LOG = logging.getLogger(__name__)
@@ -17,7 +18,6 @@ if len(sys.argv) > 1:
 LOG.info("Loading config files %s", config_files)
 # This will fail with an exception if the config file cannot be loaded
 parser.read(config_files)
-
 
 def normalize(val):
     # Coerce value to an appropriate python type
@@ -49,3 +49,12 @@ def get_flask_config():
 def get(*args, **argv):
     return normalize(parser.get(*args, **argv))
 
+def get_dir(dir_name):
+    path = parser.get('paths', dir_name)
+
+    # Relative paths are resolved relative to the top-level directory
+    if not path.startswith('/'):
+        top_dir = os.path.normpath(os.path.join(os.path.dirname(__file__), ".."))
+        path = os.path.abspath(os.path.join(top_dir, path))
+
+    return path

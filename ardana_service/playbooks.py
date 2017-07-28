@@ -2,9 +2,9 @@ from . import socketio
 from flask import abort, Blueprint, jsonify, request, \
     send_from_directory, url_for
 from flask_socketio import join_room, emit
+import config.config as config
 import logging
 import os
-# import pdb
 import re
 import subprocess
 import threading
@@ -14,10 +14,8 @@ LOG = logging.getLogger(__name__)
 
 bp = Blueprint('playbooks', __name__)
 
-# TODO(gary): read this configuration from a config file
-PLAYBOOKS_DIR = os.path.expanduser("~/dev/scratch/ansible/next/hos/ansible")
-# LOGS_DIR = "/projects/hlm-ux-services/logs"
-LOGS_DIR = "/projects/logs"
+PLAYBOOKS_DIR = config.get_dir("playbooks_dir")
+LOGS_DIR = config.get_dir("log_dir")
 
 # Dictionary of all running tasks
 tasks = {}
@@ -202,8 +200,6 @@ def spawn_process(command, args=[], cwd=None, opts={}):
     # Use a thread to read the pipe to avoid blocking this process.  Since
     # the thread will interact with socketio, we have to use that library's
     # function for creating threads
-
-    # pdb.set_trace()
 
     # Use a thread to read the pipe to avoid blocking this process
     use_threading = False
