@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 # Gotta be somewhere in the tree to run this
 git rev-parse || exit
 
@@ -14,6 +13,9 @@ mkdir -p \
    log
 
 cd data
-git clone https://git.suse.provo.cloud/hp/hlm-input-model -b hp/prerelease/ocata
 
-git clone https://git.suse.provo.cloud/hp/hlm-ansible -b hp/prerelease/ocata
+for repo in hlm-input-model hlm-ansible ; do
+    if [ ! -d $repo ] ; then
+        git clone https://git.suse.provo.cloud/hp/$repo -b hp/prerelease/ocata
+    fi
+done
