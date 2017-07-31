@@ -4,5 +4,5 @@ dist
 .eggs
 *egg-info/
 build
-data
+/data
 log

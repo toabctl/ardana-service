@@ -6,38 +6,38 @@ import yaml
 
 from .. import model
 
-class MyTest(unittest.TestCase):
+TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'test_data')
 
-    def __init__(self, *args, **kwargs):
-        super(MyTest, self).__init__(*args, **kwargs)
+class TestReadInvalidModels(unittest.TestCase):
+
+    def test_read_model_missing_config(self):
+        with self.assertRaises(IOError):
+            model.read_model(TEST_DATA_DIR)
+
+
+    def test_read_invalid_yml(self):
+        model_dir = os.path.join(TEST_DATA_DIR, 'invalid_yml')
+        with self.assertRaises(yaml.YAMLError):
+            model.read_model(model_dir)
+
+
+    def test_read_invalid_dir(self):
+        model_dir = os.path.join(TEST_DATA_DIR, 'doesnotexist')
+        with self.assertRaises(IOError):
+            model.read_model(model_dir)
+
+
+class TestWriteModels(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.model_dir = os.path.join(os.path.dirname(__file__), 'test_data')
+        cls.model_dir = os.path.join(TEST_DATA_DIR,  'two_passthroughs')
         cls.test_data = model.read_model(cls.model_dir)
 
 
     def setUp(self):
         # Start each test with a fresh copy of the test data
         self.data = copy.deepcopy(self.test_data)
-
-
-    def test_read_model_missing_config(self):
-        model_dir = os.path.join(os.path.dirname(__file__), 'test_data_invalid', 'no_config')
-        with self.assertRaises(IOError):
-            model.read_model(model_dir)
-
-
-    def test_read_invalid_yml(self):
-        model_dir = os.path.join(os.path.dirname(__file__), 'test_data_invalid', 'invalid_yml')
-        with self.assertRaises(yaml.YAMLError):
-            model.read_model(model_dir)
-
-
-    def test_read_invalid_dir(self):
-        model_dir = os.path.join(os.path.dirname(__file__), 'test_data_invalid', 'doesnotexist')
-        with self.assertRaises(IOError):
-            model.read_model(model_dir)
 
 
     def test_no_changes(self):

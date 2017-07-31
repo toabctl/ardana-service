@@ -220,10 +220,10 @@ def update_pass_through(model):
     # and become a simple string
 
     if len(model['fileInfo']['sections'][PASS_THROUGH]) == 1:
-        filename = model['fileInfo']['sections'][PASS_THROUGH]
+        filename = model['fileInfo']['sections'][PASS_THROUGH][0]
 
         for i,val in enumerate(model['fileInfo']['fileSectionMap'][filename]):
-            if isinstance(val, dict) and PASS_THROUGH in sec:
+            if isinstance(val, dict) and PASS_THROUGH in val:
                 model['fileInfo']['fileSectionMap'][filename][i] = \
                         PASS_THROUGH
                 break
