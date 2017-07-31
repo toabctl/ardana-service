@@ -1,10 +1,9 @@
 from flask import Blueprint
 import logging
-import os
 
 LOG = logging.getLogger(__name__)
-
 bp = Blueprint('osinstall', __name__)
+
 
 @bp.route("/api/v2/osinstall", methods=['POST'])
 def start_os_install():

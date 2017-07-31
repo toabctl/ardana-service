@@ -1,16 +1,15 @@
-from flask import abort, Blueprint, jsonify, request, \
-    send_from_directory, url_for
-import model
 import config.config as config
+from flask import abort
+from flask import Blueprint
+from flask import jsonify
 import logging
+import model
 import os
 
-
 LOG = logging.getLogger(__name__)
-
 bp = Blueprint('templates', __name__)
-
 TEMPLATES_DIR = config.get_dir("templates_dir")
+
 
 @bp.route("/api/v2/templates")
 def get_all_templates():

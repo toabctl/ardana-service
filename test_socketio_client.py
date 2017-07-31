@@ -2,7 +2,9 @@ import json
 import logging
 import requests
 
-from socketIO_client import SocketIO, LoggingNamespace
+from socketIO_client import LoggingNamespace
+from socketIO_client import SocketIO
+
 
 logging.getLogger('socketIO-client').setLevel(logging.DEBUG)
 logging.basicConfig()
@@ -14,15 +16,14 @@ def on_message(message):
     # the message is in the /log namespace, it will be in the format
     # 2/log["the message"]
     args = json.loads(message.lstrip('2'))
-    print args[1],
+    print(args[1],)
 
 
 socketIO = SocketIO('localhost', 5000, LoggingNamespace)
 
 socketIO.on('message', on_message)  # , path='/log')
 
-# print "Posting request"
-r = requests.post("http://localhost:5000/v2/playbooks/blather")
+r = requests.post("http://localhost:5000/api/v2/playbooks/blather")
 id = r.headers['Location'].split('/')[-1]
 
 socketIO.emit('join', id)   # , path="/log")

@@ -1,12 +1,15 @@
-from flask import abort, Blueprint, jsonify, request
 import collections
 import copy
-import config.config as config
+from flask import abort
+from flask import Blueprint
+from flask import jsonify
+from flask import request
 import logging
 import os
-import pdb
 import random
 import yaml
+
+import config.config as config
 
 LOG = logging.getLogger(__name__)
 
@@ -23,6 +26,7 @@ DELETED = 'deleted'
 ADDED = 'added'
 
 PASS_THROUGH = 'pass-through'
+
 
 @bp.route("/api/v2/model", methods=['GET', 'POST'])
 def model():
@@ -58,7 +62,8 @@ def whole_entity(entity):
     return 'Success'
 
 
-@bp.route("/api/v2/model/entities/<entity>/<id>", methods=['DELETE', 'GET', 'PUT'])
+@bp.route("/api/v2/model/entities/<entity>/<id>",
+          methods=['DELETE', 'GET', 'PUT'])
 def entry(entity, id):
     return 'Success'
 
@@ -222,15 +227,19 @@ def update_pass_through(model):
     if len(model['fileInfo']['sections'][PASS_THROUGH]) == 1:
         filename = model['fileInfo']['sections'][PASS_THROUGH][0]
 
-        for i,val in enumerate(model['fileInfo']['fileSectionMap'][filename]):
+        for i, val in enumerate(model['fileInfo']['fileSectionMap'][filename]):
             if isinstance(val, dict) and PASS_THROUGH in val:
                 model['fileInfo']['fileSectionMap'][filename][i] = \
-                        PASS_THROUGH
+                    PASS_THROUGH
                 break
 
-# Functions to write the model
 
-def write_model(in_model, model_dir, dry_run=False):
+#
+# Functions to write the model
+#
+
+# This function is long and should be modularized
+def write_model(in_model, model_dir, dry_run=False):  # noqa: C901
 
     # Create a deep copy of the model to avoid munging the model that was
     # passed in
@@ -260,18 +269,18 @@ def write_model(in_model, model_dir, dry_run=False):
                 if section not in model['inputModel']:
                     continue
 
-
-                # This section is just a flat name so the section is just the name.
-                # Note that this will process primitive types as well as
+                # This section is just a flat name so the section is just the
+                # name.  Note that this will process primitive types as well as
                 # single-file pass-through's (which contain no details in the
                 # map)
                 section_name = section
 
                 if section_name == 'product':
-                    new_content[section_name] = model['inputModel'][section_name]
+                    new_content[section_name] = \
+                        model['inputModel'][section_name]
                 else:
                     new_content[section_name] = \
-                            model['inputModel'].pop(section_name)
+                        model['inputModel'].pop(section_name)
             else:
                 # This is a dict that either defines an array (i.e. list)
                 #   {'type' : 'array'  <-
@@ -359,7 +368,7 @@ def write_model(in_model, model_dir, dry_run=False):
                                         new_content[PASS_THROUGH][first] = {}
 
                                     new_content[PASS_THROUGH][first][second] \
-                                            = val
+                                        = val
 
                                 # Remove the dictionary if it is now empty
                                 if not inputPassThru[first]:
@@ -384,7 +393,7 @@ def write_model(in_model, model_dir, dry_run=False):
         if section_name == 'product':
             continue
 
-        data = { 'product': model['inputModel']['product'] }
+        data = {'product': model['inputModel']['product']}
 
         basename = os.path.join('data', section_name.replace('-', '_'))
 
@@ -405,15 +414,14 @@ def write_model(in_model, model_dir, dry_run=False):
                 for elt in contents:
                     data[section_name] = [elt]
 
-                    filename = "%s_%s.yml" % (basename,
-                                                elt[key_field])
+                    filename = "%s_%s.yml" % (basename, elt[key_field])
                     status = write_file(model_dir, filename, data, dry_run)
                     written_files[filename] = {'data': data, 'status': status}
             else:
                 # place all elements of the list into a single file
                 data[section_name] = contents
                 filename = "%s_%s.yml" % (basename,
-                                            contents[0][key_field])
+                                          contents[0][key_field])
                 status = write_file(model_dir, filename, data, dry_run)
                 written_files[filename] = {'data': data, 'status': status}
         else:
@@ -449,6 +457,7 @@ def is_split_into_equal_number_of_files(model, section_name):
                     return
 
     return True
+
 
 def get_section_key_field(model, section_name):
 
@@ -494,9 +503,9 @@ def write_file(model_dir, filename, new_content, dry_run):
         if not dry_run:
             with open(filepath, "w") as f:
                 yaml.safe_dump(new_content, f,
-                            indent=2,
-                            default_flow_style=False,
-                            canonical=False)
+                               indent=2,
+                               default_flow_style=False,
+                               canonical=False)
 
     # Return an indication of whether a file was written (vs ignored)
     status = CHANGED if existed else ADDED

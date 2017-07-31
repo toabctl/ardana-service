@@ -1,6 +1,6 @@
 from flask import Blueprint
+from flask import jsonify
 import logging
-import os
 
 LOG = logging.getLogger(__name__)
 
@@ -25,5 +25,3 @@ def history():
 @bp.route("/api/v2/model/commit", methods=['POST'])
 def commit():
     return 'Success'
-
-

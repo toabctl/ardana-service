@@ -1,14 +1,20 @@
-from . import socketio
-from flask import abort, Blueprint, jsonify, request, \
-    send_from_directory, url_for
-from flask_socketio import join_room, emit
-import config.config as config
+from flask import abort
+from flask import Blueprint
+from flask import jsonify
+from flask import request
+from flask import send_from_directory
+from flask import url_for
+from flask_socketio import emit
+from flask_socketio import join_room
 import logging
 import os
 import re
 import subprocess
 import threading
 import time
+
+from . import socketio
+import config.config as config
 
 LOG = logging.getLogger(__name__)
 
