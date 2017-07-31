@@ -27,18 +27,8 @@ class TestReadInvalidModels(unittest.TestCase):
             model.read_model(model_dir)
 
 
-class TestWriteModels(unittest.TestCase):
-
-    @classmethod
-    def setUpClass(cls):
-        cls.model_dir = os.path.join(TEST_DATA_DIR,  'two_passthroughs')
-        cls.test_data = model.read_model(cls.model_dir)
-
-
-    def setUp(self):
-        # Start each test with a fresh copy of the test data
-        self.data = copy.deepcopy(self.test_data)
-
+# Note that this class does not inherit from TestCase, but its descendants do
+class TestWriteModels():
 
     def test_no_changes(self):
         changes = model.write_model(self.data, self.model_dir, dry_run=True)
@@ -180,6 +170,33 @@ class TestWriteModels(unittest.TestCase):
         self.assertEquals(model.CHANGED, info['status'])
 
 
+    def test_delete_list(self):
+        self.data['inputModel'].pop('control-planes')
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.DELETED, info['status'])
+
+        self.assertIn('data/control_plane.yml', changed)
+
+
+# Write tests with a model that originally contained two pass-through files
+class TestWriteTwoPassthroughs(unittest.TestCase, TestWriteModels):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model_dir = os.path.join(TEST_DATA_DIR, 'two_passthroughs')
+        cls.test_data = model.read_model(cls.model_dir)
+
+    def setUp(self):
+        # Start each test with a fresh copy of the test data
+        self.data = copy.deepcopy(self.test_data)
+
     def test_update_pass_through(self):
         # Modify one of the values in data/neutron_passthrough.yml
         self.data['inputModel']['pass-through']['global']['esx_cloud2'] = False
@@ -238,3 +255,96 @@ class TestWriteModels(unittest.TestCase):
 
         filename = changed.keys()[0]
         self.assertIn('data/neutron_passthrough.yml', changed)
+
+
+# Write tests with a model that originally contained one pass-through file
+class TestWriteOnePassthrough(unittest.TestCase, TestWriteModels):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model_dir = os.path.join(TEST_DATA_DIR, 'one_passthrough')
+        cls.test_data = model.read_model(cls.model_dir)
+
+    def setUp(self):
+        # Start each test with a fresh copy of the test data
+        self.data = copy.deepcopy(self.test_data)
+
+    def test_add_pass_through(self):
+
+        # Modify one value in the existing pass-through.global dict
+        self.data['inputModel']['pass-through']['global']['foo'] = 'bar'
+
+        # And create a brand new section in pass-through
+        self.data['inputModel']['pass-through']['newsection'] = 'baz'
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        # All pass_through contents should be written to the existing file
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.CHANGED, info['status'])
+
+        filename = changed.keys()[0]
+        self.assertEquals('data/pass_through.yml', filename)
+
+        self.assertIn('foo', info['data']['pass-through']['global'])
+        self.assertIn('newsection', info['data']['pass-through'])
+
+
+    def test_delete_pass_through(self):
+        # Delete the only value in one of the pass-through sections
+        self.data['inputModel'].pop('pass-through')
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.DELETED, info['status'])
+
+        filename = changed.keys()[0]
+        self.assertIn('data/pass_through.yml', changed)
+
+
+
+# Write tests with a model that originally contained no pass-through file
+class TestWriteNoPassthrough(unittest.TestCase, TestWriteModels):
+
+    @classmethod
+    def setUpClass(cls):
+        cls.model_dir = os.path.join(TEST_DATA_DIR, 'no_passthrough')
+        cls.test_data = model.read_model(cls.model_dir)
+
+    def setUp(self):
+        # Start each test with a fresh copy of the test data
+        self.data = copy.deepcopy(self.test_data)
+
+    def test_add_pass_through(self):
+
+        # Add a passthrough section
+        self.data['inputModel']['pass-through'] = {}
+        self.data['inputModel']['pass-through']['global'] = {}
+        self.data['inputModel']['pass-through']['global']['foo'] = 'bar'
+
+        # Write the changes
+        changes = model.write_model(self.data, self.model_dir, dry_run=True)
+
+        changed = {k:v for k,v in changes.iteritems() if v['status'] != model.IGNORED}
+        self.assertEquals(1, len(changed))
+
+        info = changed.values()[0]
+        self.assertEquals(model.ADDED, info['status'])
+
+        filename = changed.keys()[0]
+
+        # Should create some random filename that begins with pass-through
+        self.assertTrue(filename.startswith('data/pass_through_'))
+
+        self.assertIn('foo', info['data']['pass-through']['global'])
+
+

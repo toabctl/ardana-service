@@ -253,7 +253,13 @@ def write_model(in_model, model_dir, dry_run=False):
 
         # sections is a list of sections in the file
         for section in sections:
+
             if isinstance(section, basestring):
+                # Skip the remaining processing if the entire section has been
+                # removed
+                if section not in model['inputModel']:
+                    continue
+
 
                 # This section is just a flat name so the section is just the name.
                 # Note that this will process primitive types as well as
@@ -282,6 +288,11 @@ def write_model(in_model, model_dir, dry_run=False):
                 section_type = section['type']
                 section_name = [k for k in section.keys()
                                 if k not in ('type', 'keyField')][0]
+
+                # Skip the remaining processing if the entire section has been
+                # removed
+                if section_name not in model['inputModel']:
+                    continue
 
                 if section_type == 'array':
 
