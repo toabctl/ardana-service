@@ -68,6 +68,64 @@ def entry(entity, id):
     return 'Success'
 
 
+@bp.route("/api/v2/model/files", methods=['GET'])
+def get_all_files():
+
+    file_list = []
+
+    # Now read and process all yml files in the dir tree below
+    for root, dirs, files in os.walk(MODEL_DIR):
+        for file in files:
+            relname = os.path.relpath(os.path.join(root, file), MODEL_DIR)
+            if file.endswith('.yml'):
+
+                # For now, the description will be just use the filename
+                # (without extension) using space in place of underscores
+                description = os.path.basename(relname).split('.')[0]
+                description = description.replace('_', ' ')
+
+                file_list.append({
+                    'name': relname,
+                    'description': description
+                })
+
+    return jsonify(file_list)
+
+
+@bp.route("/api/v2/model/files/<path:name>", methods=['GET', 'POST'])
+def model_file(name):
+
+    if request.method == 'GET':
+        filename = os.path.join(MODEL_DIR, name)
+        try:
+            with open(filename) as f:
+                lines = f.readlines()
+            contents = ''.join(lines)
+
+        except IOError:
+            pass
+
+        return jsonify(contents)
+    else:
+        data = request.get_json()
+
+        # Verify that it is valid yaml before accepting it
+        try:
+            yaml.safe_load(data)
+        except yaml.YAMLError:
+            LOG.exception("Invalid yaml data")
+            abort(400)
+
+        # It's valid, so write it out
+        filename = os.path.join(MODEL_DIR, name)
+        try:
+            with open(filename, "w") as f:
+                f.write(data)
+            return 'Success'
+        except Exception:
+            abort(500)
+
+
 def get_key_field(obj):
 
     # Several kinds of ids are used in the input model:
