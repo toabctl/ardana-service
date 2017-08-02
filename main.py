@@ -10,6 +10,7 @@ from ardana_service import templates
 from ardana_service import versions
 from config import config
 from flask import Flask
+from flask_cors import CORS
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
@@ -24,6 +25,7 @@ app.register_blueprint(model.bp)
 app.register_blueprint(osinstall.bp)
 app.register_blueprint(templates.bp)
 app.register_blueprint(versions.bp)
+CORS(app)
 
 if __name__ == "__main__":
 
